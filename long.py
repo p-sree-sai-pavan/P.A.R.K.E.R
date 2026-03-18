@@ -33,8 +33,8 @@ MEMORY:
 USER MEMORY:
 {user_details_content}"""
 
-memory_llm = ChatOllama(model="qwen2.5:7b", temperature=0)
-chat_llm = ChatOllama(model="qwen2.5:7b")
+memory_llm = ChatOllama(model="qwen2.5:7b", temperature=0, num_ctx=2048)
+chat_llm = ChatOllama(model="qwen2.5:7b", num_ctx=4096)
 embedder = OllamaEmbeddings(model="mxbai-embed-large")
 
 class MemoryItem(BaseModel):
@@ -63,14 +63,17 @@ def embed(text: str) -> list[float]:
     return embedder.embed_query(text)
 
 def _write_memories_bg(last_msg: str, user_details: str, namespace, store: BaseStore):
-    decision: MemoryDecision = memory_extractor.invoke([
-        SystemMessage(content=MEMORY_PROMPT.format(user_details_content=user_details)),
-        {"role": "user", "content": last_msg},
-    ])
-    if decision.should_write:
-        for mem in decision.memories:
-            if mem.is_new:
-                store.put(namespace, mem.category, {"data": mem.text})
+    try:
+        decision: MemoryDecision = memory_extractor.invoke([
+            SystemMessage(content=MEMORY_PROMPT.format(user_details_content=user_details)),
+            {"role": "user", "content": last_msg},
+        ])
+        if decision.should_write:
+            for mem in decision.memories:
+                if mem.is_new:
+                    store.put(namespace, mem.category, {"data": mem.text})
+    except Exception as e:
+        print(f"\\n[Memory Extraction Skipped] {e}")
 
 def remember_node(state: MessagesState, config: RunnableConfig, store: BaseStore):
 
