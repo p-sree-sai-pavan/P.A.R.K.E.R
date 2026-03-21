@@ -6,7 +6,7 @@ from graph import build_graph
 from ears import listen
 from mouth import speak
 from config import DEFAULT_USER_ID, DEFAULT_THREAD_ID, get_config
-from database import create_store, create_checkpointer, setup_database
+from database import create_store, create_checkpointer, setup_database, close_connections
 from memory.rollup   import rollup_if_needed
 from memory.tasks    import tick_sessions
 from memory.facts    import archive_stale_facts
@@ -133,3 +133,4 @@ if __name__ == "__main__":
     finally:
         # Always write session memory even on Ctrl+C
         session_end(store, messages)
+        close_connections()

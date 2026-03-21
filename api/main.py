@@ -16,7 +16,7 @@ load_dotenv()
 
 # Load Parker core logic
 from config import DEFAULT_USER_ID, get_config
-from database import create_store, create_checkpointer, setup_database
+from database import create_store, create_checkpointer, setup_database, close_connections
 from graph import build_graph
 from memory.tasks import load_pending_tasks
 from memory.projects import load_active_projects
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
     setup_database(store, checkpointer)
     yield
     # Shutdown tasks
+    close_connections()
 
 app = FastAPI(title="Parker API", lifespan=lifespan)
 

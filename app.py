@@ -32,8 +32,8 @@ from ears import listen
 from mouth import speak
 
 from config import DB_URI, DEFAULT_USER_ID
-from database import create_store, create_checkpointer, setup_database
-from models import memory_llm, chat_llm
+from database import create_store, create_checkpointer, setup_database, close_connections
+from graph import build_graph
 
 # ── Palette (Premium Dark / Zinc) ─────────────────────────────────
 BG          = "#09090b"
@@ -58,14 +58,13 @@ class Worker(QThread):
     status   = Signal(str)
     finished = Signal(str)
 
-    def __init__(self, store, user_id, prompt: str):
+    def __init__(self, graph, config: dict, prompt: str):
         super().__init__()
-        self.store   = store
-        self.user_id = user_id
+        self.graph   = graph
+        self.config  = config
         self.prompt  = prompt
         self._full   = ""
         self._cancel = False
-        self._gate_result = None
 
     def cancel(self):
         self._cancel = True
@@ -110,74 +109,26 @@ class Worker(QThread):
 
     def _chat(self):
         self.status.emit("thinking")
-        
-        # 1. Fast trigger check
-        from graph import trigger_llm, MemoryTrigger
-        try:
-            trigger = trigger_llm.invoke([{"role": "user", "content": self.prompt}])
-        except Exception as e:
-            trigger = MemoryTrigger(needs_retrieval=True, needs_storage=True)
-            
-        # Store trigger decision so the background thread can use it
-        self._trigger = trigger
 
-        # 2. Build context
-        from retrieval import build_context
-        from prompts import SYSTEM_PROMPT_TEMPLATE, BASE_INSTRUCTIONS
-        
-        if not trigger.needs_retrieval:
-            context = {
-                "profile": "(Memory lookup skipped)",
-                "active_projects": "(Memory lookup skipped)",
-                "critical_facts": "(Memory lookup skipped)",
-                "relevant_facts": "(Memory lookup skipped)",
-                "approved_reminders": "(Memory lookup skipped)",
-                "relevant_episodes": "(Memory lookup skipped)",
-                "current_time": "Now",
-                "_triggered_tasks": [],
-            }
-        else:
-            from langchain_core.messages import HumanMessage
-            context = build_context(
-                self.store, 
-                self.user_id, 
-                self.prompt,
-                recent_history=[HumanMessage(content=self.prompt)],
-                llm=memory_llm
-            )
-            self._gate_result = context.get("_gate_result")
-
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-            base_instructions=BASE_INSTRUCTIONS,
-            profile=context["profile"],
-            critical_facts=context["critical_facts"],
-            relevant_facts=context["relevant_facts"],
-            active_projects=context["active_projects"],
-            approved_reminders=context["approved_reminders"],
-            relevant_episodes=context["relevant_episodes"],
-            current_time=context["current_time"],
-        )
-
-        system_msg = SystemMessage(content=system_prompt)
-        messages = [system_msg, {"role": "user", "content": self.prompt}]
-
+        # Use the graph — it handles trigger, memory retrieval/storage,
+        # and chat response. The checkpointer accumulates conversation
+        # history automatically across turns.
         self.status.emit("responding")
-        
-        for chunk in chat_llm.stream(messages):
+
+        for event in self.graph.stream(
+            {"messages": [HumanMessage(content=self.prompt)]},
+            self.config,
+            stream_mode="messages",
+        ):
             if self._cancel:
                 break
-            if hasattr(chunk, "content") and chunk.content:
-                self._full += chunk.content
-                self.token.emit(chunk.content)
+            msg, metadata = event
+            # Only stream tokens from the chat node (the final response)
+            if metadata.get("langgraph_node") == "chat" and hasattr(msg, "content") and msg.content:
+                self._full += msg.content
+                self.token.emit(msg.content)
 
         if not self._cancel:
-            # Notifications tracking for surfaced tasks
-            triggered_tasks = context.get("_triggered_tasks", [])
-            if triggered_tasks:
-                from memory.tasks import increment_notify
-                for task in triggered_tasks:
-                    increment_notify(self.store, self.user_id, task.key)
-                    
             self.status.emit("done")
             self.finished.emit(self._full)
 
@@ -353,9 +304,12 @@ class ParkerApp(QWidget):
         super().__init__()
         self.store       = store
         self.checkpointer = checkpointer
+        self.graph       = build_graph(store, checkpointer)
         
-        # We assign the default user ID from config
-        self.session_id  = DEFAULT_USER_ID
+        # User ID for memory namespacing
+        self.user_id     = DEFAULT_USER_ID
+        # Thread ID for conversation history — rotated on "New Chat"
+        self.thread_id   = str(uuid.uuid4())
         
         self.worker      = None
         self._busy       = False
@@ -542,8 +496,9 @@ class ParkerApp(QWidget):
         if self._busy:
             self._stop_generation()
 
-        # To start fresh, we could rotate session_id, but the user prefers one continuous memory.
-        # Just clearing UI is usually what a "New Chat" implies for memory agents.
+        # Rotate thread_id so the checkpointer starts a fresh conversation.
+        # Long-term memory (facts, profile, tasks) persists — only chat history resets.
+        self.thread_id = str(uuid.uuid4())
         self._set_status("Ready")
 
     def _submit(self, text: str):
@@ -558,7 +513,13 @@ class ParkerApp(QWidget):
         self._ai_msg = self._add_message("parker", "")
         self._set_status("Thinking…")
 
-        self.worker = Worker(self.store, self.session_id, text)
+        config = {
+            "configurable": {
+                "user_id": self.user_id,
+                "thread_id": self.thread_id,
+            }
+        }
+        self.worker = Worker(self.graph, config, text)
         self.worker.token.connect(self._on_token)
         self.worker.status.connect(self._on_status)
         self.worker.finished.connect(self._on_done)
@@ -612,35 +573,10 @@ class ParkerApp(QWidget):
         if self._ai_msg:
             self._ai_msg.finalize_markdown()
 
-        # Only remember and speak if not cancelled mid-way (full_response is not None)
-        if full_response is not None:
-            # Capture the trigger from the worker so the background thread knows whether to save
-            trigger_val = getattr(self.worker, "_trigger", None)
-            def background():
-                try:
-                    from graph import remember_node
-                    from langchain_core.messages import HumanMessage
-
-                    # 1. Handle explicit completions from the gate
-                    gate_result = getattr(self.worker, "_gate_result", {})
-                    if gate_result:
-                        for key in gate_result.get("complete", []):
-                            from memory.tasks import mark_completed
-                            mark_completed(self.store, self.session_id, key)
-
-                    # 2. Run background extraction
-                    state = {"messages": [HumanMessage(content=self._last_input)]}
-                    if trigger_val:
-                        state["_trigger"] = trigger_val
-                    config = {"configurable": {"user_id": self.session_id}}
-                    remember_node(state, config, self.store)
-                except Exception as e:
-                    print("[App] Background extraction error:", e)
-                
-                if full_response:
-                    speak(full_response)
-
-            threading.Thread(target=background, daemon=True).start()
+        # The graph already handles memory storage via remember_node.
+        # We only need to speak the response.
+        if full_response is not None and full_response:
+            threading.Thread(target=speak, args=(full_response,), daemon=True).start()
 
     # ── Helpers ──────────────────────────────────────────────────
     def _add_message(self, role: str, text: str) -> ChatMessage:

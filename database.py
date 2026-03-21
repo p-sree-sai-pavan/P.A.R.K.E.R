@@ -14,6 +14,10 @@ from models import embed_fn
 
 logger = logging.getLogger(__name__)
 
+# Keep references to the context managers so we can close them on shutdown
+_active_store_cm = None
+_active_checkpointer_cm = None
+
 
 class DatabaseConnectionError(Exception):
     """Raised when database connection fails after retries."""
@@ -21,8 +25,14 @@ class DatabaseConnectionError(Exception):
 
 
 def create_store() -> PostgresStore:
-    """Create a PostgresStore with proper configuration."""
-    return PostgresStore.from_conn_string(
+    """Create a PostgresStore with proper configuration.
+
+    In langgraph-checkpoint-postgres >= 3.x, from_conn_string() returns
+    a context manager. We enter it immediately and keep a reference to
+    the context manager for later cleanup.
+    """
+    global _active_store_cm
+    cm = PostgresStore.from_conn_string(
         DB_URI,
         index={
             "dims": EMBEDDING_DIMS,
@@ -30,11 +40,36 @@ def create_store() -> PostgresStore:
             "fields": ["text"],
         }
     )
+    store = cm.__enter__()
+    _active_store_cm = cm
+    return store
 
 
 def create_checkpointer() -> PostgresSaver:
-    """Create a PostgresSaver for conversation checkpoints."""
-    return PostgresSaver.from_conn_string(DB_URI)
+    """Create a PostgresSaver for conversation checkpoints.
+
+    In langgraph-checkpoint-postgres >= 3.x, from_conn_string() returns
+    a context manager. We enter it immediately and keep a reference to
+    the context manager for later cleanup.
+    """
+    global _active_checkpointer_cm
+    cm = PostgresSaver.from_conn_string(DB_URI)
+    checkpointer = cm.__enter__()
+    _active_checkpointer_cm = cm
+    return checkpointer
+
+
+def close_connections():
+    """Gracefully close active database connections."""
+    global _active_store_cm, _active_checkpointer_cm
+    for name, cm in [("store", _active_store_cm), ("checkpointer", _active_checkpointer_cm)]:
+        if cm is not None:
+            try:
+                cm.__exit__(None, None, None)
+            except Exception as e:
+                logger.warning(f"Error closing {name}: {e}")
+    _active_store_cm = None
+    _active_checkpointer_cm = None
 
 
 @contextmanager
@@ -73,18 +108,7 @@ def get_db_connections():
     try:
         yield store, checkpointer
     finally:
-        # Cleanup connections
-        try:
-            if store:
-                store.__exit__(None, None, None)
-        except Exception as e:
-            logger.warning(f"Error closing store: {e}")
-
-        try:
-            if checkpointer:
-                checkpointer.__exit__(None, None, None)
-        except Exception as e:
-            logger.warning(f"Error closing checkpointer: {e}")
+        close_connections()
 
 
 def setup_database(store: PostgresStore, checkpointer: PostgresSaver):
