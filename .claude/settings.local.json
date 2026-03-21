@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app.py)",
+      "Bash(python -m py_compile graph.py)",
+      "Bash(python -m py_compile memory/facts.py memory/profile.py memory/tasks.py memory/projects.py memory/episodes.py memory/rollup.py memory/utils.py memory/gate.py memory/reminder_gate.py)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}
