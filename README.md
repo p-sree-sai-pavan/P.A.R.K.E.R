@@ -1,103 +1,107 @@
-<div align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/UI-PySide6-41CD52.svg" alt="PySide6">
-  <img src="https://img.shields.io/badge/AI-Ollama%20(Local)-white.svg" alt="Ollama">
-  <img src="https://img.shields.io/badge/Database-PostgreSQL-336791.svg" alt="PostgreSQL">
-  <h1>P.A.R.K.E.R.</h1>
-  <p><strong>Private, Autonomous, Responsive Knowledge Engine with Recall</strong></p>
-  <p>A completely local, ultra-fast AI companion with infinite memory, native voice interaction, and a premium dark-themed desktop UI.</p>
-</div>
+# 🌌 P.A.R.K.E.R AI
+### *Personal Assistant for Retrieval, Knowledge, and Episodic Reasoning*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791.svg)](https://www.postgresql.org/)
+[![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange.svg)](https://langchain-ai.github.io/langgraph/)
+
+**Parker AI** is a state-of-the-art personal assistant designed to be more than just a chatbot. It features a deep, persistent memory system powered by **LangGraph** and **PostgreSQL**, designed to recall past conversations, manage long-term projects, and proactively handle tasks.
 
 ---
 
-## 🚀 Overview
+## ✨ Key Features
 
-Parker is a modular AI assistant designed to live entirely on your machine. He learns from your interactions, builds a long-term implicit memory of who you are, and communicates with you through voice and text. No cloud APIs, no data mining, zero subscription fees.
-
-By combining the reasoning power of `qwen2.5:7b` via **Ollama**, infinite persistent memory via **LangGraph + PostgreSQL**, and lightning-fast voice processing, Parker acts as a true personal companion.
-
----
-
-## ✨ Features
-
-- 🧠 **Infinite Implicit Memory**: Parker extracts and saves facts, habits, and preferences dynamically into PostgreSQL using `mxbai-embed-large` vector embeddings. He remembers you without you ever saying "remember this".
-- 🎙️ **Native Voice Interaction**: Built-in microphone processing using `faster-whisper` (transcription) and `silero-vad` (voice activity detection). Talk naturally—Parker knows exactly when you stop speaking.
-- 🗣️ **Local Text-to-Speech**: Instant, lag-free voice responses using Windows SAPI5 (`pyttsx3`) handled gracefully on a background thread.
-- 🎨 **Premium Local Desktop App**: A seamless, ChatGPT-style chat interface built in pure `PySide6`. Features a high-contrast Vercel-style dark theme, auto-resizing text boxes, Markdown streaming, and real-time generation stops.
-- 🔒 **100% Private**: Everything runs locally. Your voice, chat history, and extracted memories never leave your machine.
+- **🧠 Deep Episodic Memory**: Uses semantic vector search to recall context from days or weeks ago.
+- **🛡️ The Memory Gate**: An autonomous sub-system that filters noise and only stores meaningful tasks, facts, and preferences.
+- **🚀 Dual-Interface Power**:
+  - **Premium Desktop App**: A sleek PySide6-based GUI with streaming markdown, dark mode, and voice support.
+  - **Scalable API**: A robust FastAPI backend with WebSocket support for real-time streaming.
+- **⚡ Hybrid LLM Orchestration**: Combines the speed of **Groq** for chat with the privacy and cost-efficiency of **Ollama** for memory extraction.
+- **📋 Smart Task Engine**: Automatically detects "remind me" intents, calculates due times, and surfaces reminders naturally in conversation.
+- **🎙️ Native Voice**: Built-in speech-to-text (STT) and text-to-speech (TTS) for hands-free interaction.
 
 ---
 
 ## 🏗️ Architecture
 
-Parker's anatomy is split into clean, single-purpose Python modules:
+Parker uses a modular, graph-based architecture to ensure reliable and context-aware responses.
 
-| Component | Responsibility | Tech Stack |
-|-----------|---------------|------------|
-| `app.py`  | **The Face.** The premium PySide6 Desktop GUI, handling all visual interactions, streaming rendering, and chat components. | `PySide6` |
-| `long.py` | **The Brain.** Manages state machines, system prompting, Ollama generation, and dynamic memory extraction. | `LangGraph`, `LangChain`, `Ollama` |
-| `ears.py` | **The Senses.** Listens to your microphone. Automatically detects silence and transcribes audio to text instantly. | `faster-whisper`, `silero-vad` |
-| `mouth.py`| **The Voice.** Takes text and speaks it out loud natively using Windows TTS. Non-blocking and thread-safe. | `pyttsx3`, `SAPI5` |
-| `main.py` | **The Core/CLI.** The terminal-only version of Parker if you prefer working entirely from the command line. | `Python` |
+- **`app.py`**: The main Desktop GUI (PySide6).
+- **`graph.py`**: The LangGraph state machine orchestrating the `trigger → remember → chat` flow.
+- **`memory/`**: The core intelligence layer, including task management, fact extraction, and profile rollup.
+- **`api/`**: FastAPI server for remote integration and web-based frontends.
+- **`database.py`**: Centralized PostgreSQL management with `pgvector` support.
 
 ---
 
-## ⚙️ Installation & Setup
+## 🚀 Getting Started
 
-### 1. Requirements
-Ensure you have the following installed on your system:
-- **Python 3.11+**
-- **Docker** (for PostgreSQL)
-- **Ollama** (for running the local LLMs)
+### 1. Prerequisites
+- **Python 3.10+**
+- **Docker Desktop** (for PostgreSQL)
+- **Ollama** (for local embeddings and memory extraction)
+- **Groq API Key** (for fast chat responses)
 
-### 2. Start the Database
-Parker uses PostgreSQL with pgvector natively to manage chat checkpoints and memory embeddings.
+### 2. Setup
+```bash
+# Clone the repository
+git clone https://github.com/p-sree-sai-pavan/P.A.R.K.E.R.git
+cd P.A.R.K.E.R
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY
+```
+
+### 3. Launching
+Parker is designed for easy startup:
+
+**Windows (Recommended):**
+Simply run the included batch file:
+```cmd
+run_parker.bat
+```
+*This will automatically start the Docker database and launch the GUI.*
+
+**Manual:**
 ```bash
 docker compose up -d
-```
-
-### 3. Pull the AI Models
-Parker relies on Ollama for both reasoning and memory embedding:
-```bash
-ollama pull qwen2.5:7b
-ollama pull mxbai-embed-large
-```
-
-### 4. Install Dependencies
-```bash
-pip install PySide6 langchain-core langchain-ollama langgraph psycopg pyttsx3 faster-whisper silero-vad sounddevice scipy numpy python-dotenv
-```
-
----
-
-## 🎮 Usage
-
-### Launch the Desktop App (Recommended)
-This gives you the premium ChatGPT-style interface with voice capabilities.
-```bash
 python app.py
 ```
-* **Text Mode:** Type freely, press `Shift+Enter` for newlines, `Enter` to send.
-* **Voice Mode:** Click the `🎙` button to speak. Parker stops listening as soon as you stop talking.
-* **Stop Generation:** Click the `⏹` button to halt Parker if he talks too long.
-
-### Launch the Terminal Interface
-For a strict CLI experience:
-```bash
-python main.py
-```
 
 ---
 
-## 🛠️ Performance Tuning
+## ⚙️ Configuration
 
-If you notice Parker is generating responses slowly, you can tweak the context window inside `long.py`:
-```python
-chat_llm = ChatOllama(model="qwen2.5:7b", num_ctx=4096)
-```
-Lowering `num_ctx` (e.g. `2048`) will drastically speed up inference on lower-end hardware.
+Parker is highly configurable via `.env`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_URI` | PostgreSQL connection string | `localhost:5442` |
+| `CHAT_LLM_PROVIDER` | LLM for responses (`groq` or `ollama`) | `groq` |
+| `MEMORY_LLM_PROVIDER` | LLM for extraction | `ollama` |
+| `GROQ_API_KEY` | Your Groq Cloud API Key | (required) |
+
+---
+
+## 🤝 Contributing
+
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ---
 
 ## 📄 License
-This project is licensed under the MIT License.
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+*Developed by [P Sree Sai Pavan](https://github.com/p-sree-sai-pavan)*
