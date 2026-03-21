@@ -51,13 +51,6 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "mxbai-embed-large")
 EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# User Configuration
-# ════════════════════════════════════════════════════════════════════════════════
-
-DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID", "u1")
-DEFAULT_THREAD_ID = os.getenv("DEFAULT_THREAD_ID", "thread_u1")
-
 
 # ════════════════════════════════════════════════════════════════════════════════
 # Reminder Configuration

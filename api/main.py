@@ -12,28 +12,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+load_dotenv()
+
 # Load Parker core logic
-from graph import build_graph, config
-from langgraph.store.postgres import PostgresStore
-from langgraph.checkpoint.postgres import PostgresSaver
+from config import DEFAULT_USER_ID, get_config
+from database import create_store, create_checkpointer, setup_database
+from graph import build_graph
 from memory.tasks import load_pending_tasks
 from memory.projects import load_active_projects
 from memory.profile import load_profile
 
-load_dotenv()
+USER_ID = DEFAULT_USER_ID
+config  = get_config(USER_ID)
 
-DB_URI = os.getenv("DB_URI", "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable")
-USER_ID = "u1"
+store        = create_store()
+checkpointer = create_checkpointer()
+graph        = build_graph(store, checkpointer)
 
-store = PostgresStore.from_conn_string(DB_URI)
-checkpointer = PostgresSaver.from_conn_string(DB_URI)
-graph = build_graph(store, checkpointer)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup tasks
-    store.setup()
-    checkpointer.setup()
+    setup_database(store, checkpointer)
     yield
     # Shutdown tasks
 
