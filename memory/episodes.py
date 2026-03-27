@@ -3,7 +3,7 @@ from datetime import datetime
 from langchain_core.messages import SystemMessage
 
 from models import memory_llm
-from prompts import CHAT_SUMMARY_PROMPT
+from prompts.rollup import CHAT_SUMMARY_PROMPT
 from memory.utils import (
     format_messages, parse_json_object,
     semantic_search
@@ -60,7 +60,7 @@ def write_chat_entry(store, user_id: str, messages: list):
             "key_topics":         parsed.get("key_topics", []),
             "projects_mentioned": parsed.get("projects_mentioned", []),
             "decisions":          parsed.get("decisions", []),
-            "left_unfinished":    parsed.get("left_unfinished", []),
+            "left_unfinished":    parsed.get("open_threads", []),
             "created_at":         time.time(),
             # text field is what PostgresStore embeds for semantic search
             # key_topics is a more precise embedding target than full summary
@@ -107,54 +107,54 @@ def load_relevant_episodes(store, user_id: str, query: str) -> list:
         # Level 2 — months within relevant years
         month_hits = []
         if relevant_years:
-            all_months = semantic_search(store, NS_MONTH(user_id), query=query, limit=6)
+            all_months = semantic_search(store, NS_MONTH(user_id), query=query, limit=50)
             month_hits = [
                 m for m in all_months
                 if any(m.key.startswith(y) for y in relevant_years)
             ]
         else:
             # No year signal — search all months directly
-            month_hits = semantic_search(store, NS_MONTH(user_id), query=query, limit=4)
+            month_hits = semantic_search(store, NS_MONTH(user_id), query=query, limit=20)
 
         relevant_months = _extract_time_labels(month_hits)
 
         # Level 3 — weeks within relevant months
         week_hits = []
         if relevant_months:
-            all_weeks = semantic_search(store, NS_WEEK(user_id), query=query, limit=8)
+            all_weeks = semantic_search(store, NS_WEEK(user_id), query=query, limit=50)
             week_hits = [
                 w for w in all_weeks
                 if any(_week_in_month(w.key, m) for m in relevant_months)
             ]
         else:
-            week_hits = semantic_search(store, NS_WEEK(user_id), query=query, limit=4)
+            week_hits = semantic_search(store, NS_WEEK(user_id), query=query, limit=20)
 
         relevant_weeks = _extract_time_labels(week_hits)
 
         # Level 4 — days within relevant weeks
         day_hits = []
         if relevant_weeks:
-            all_days = semantic_search(store, NS_DAY(user_id), query=query, limit=10)
+            all_days = semantic_search(store, NS_DAY(user_id), query=query, limit=50)
             day_hits = [
                 d for d in all_days
                 if any(_day_in_week(d.key, w) for w in relevant_weeks)
             ]
         else:
-            day_hits = semantic_search(store, NS_DAY(user_id), query=query, limit=4)
+            day_hits = semantic_search(store, NS_DAY(user_id), query=query, limit=20)
 
         relevant_days = [d.key for d in day_hits]  # e.g. ["2025-03-19"]
 
         # Level 5 — individual chat entries within relevant days
         chat_hits = []
         if relevant_days:
-            all_chats = semantic_search(store, NS_CHAT(user_id), query=query, limit=15)
+            all_chats = semantic_search(store, NS_CHAT(user_id), query=query, limit=50)
             chat_hits = [
                 c for c in all_chats
                 if any(c.key.startswith(day) for day in relevant_days)
             ]
         else:
             # No day signal — semantic search directly on chat entries
-            chat_hits = semantic_search(store, NS_CHAT(user_id), query=query, limit=5)
+            chat_hits = semantic_search(store, NS_CHAT(user_id), query=query, limit=20)
 
         # Return most specific first: chat entries, then day summaries
         results = chat_hits + day_hits

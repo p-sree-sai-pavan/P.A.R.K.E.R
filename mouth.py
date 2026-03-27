@@ -1,18 +1,31 @@
 # mouth.py — Text → Speech
-# Uses: pyttsx3 (fully local, works on Windows, zero setup)
 
+import re
 import pyttsx3
 import threading
 import queue
 
-_q = queue.Queue()
+_q    = queue.Queue()
+_stop = threading.Event()
+
+
+def _clean(text: str) -> str:
+    """M1 fix: strip all common markdown before speaking."""
+    text = re.sub(r"```[\s\S]*?```", "", text)   # code blocks
+    text = re.sub(r"`[^`]*`", "", text)           # inline code
+    text = re.sub(r"#{1,6}\s*", "", text)         # headers
+    text = re.sub(r"\*{1,3}([^*]*)\*{1,3}", r"\1", text)  # bold/italic
+    text = re.sub(r"_{1,3}([^_]*)_{1,3}", r"\1", text)    # underline
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)  # blockquotes
+    text = re.sub(r"^-{3,}$", "", text, flags=re.MULTILINE)  # dividers
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # links → text only
+    return text.strip()
+
 
 def _tts_worker():
-    # Initialize engine INSIDE the thread that will use it.
-    # Windows COM objects (SAPI5) crash if shared across threads.
     try:
         engine = pyttsx3.init()
-        engine.setProperty("rate", 175)     # 175 words/min
+        engine.setProperty("rate", 175)
         engine.setProperty("volume", 1.0)
     except Exception as e:
         print(f"TTS Init Error: {e}")
@@ -20,24 +33,45 @@ def _tts_worker():
 
     while True:
         text = _q.get()
-        if text is None: break
-        
-        # SAPI5 sometimes gets stuck parsing markdown symbols, so we clean it slightly
-        clean_text = text.replace("*", "").replace("#", "").replace("_", "")
-        
+        if text is None:
+            break
+
+        # S5 fix: discard queued items if stop was requested
+        if _stop.is_set():
+            continue
+
         try:
-            engine.say(clean_text)
+            _stop.clear()
+            engine.say(_clean(text))
             engine.runAndWait()
         except Exception as e:
             print(f"TTS Speech Error: {e}")
 
-# Start the dedicated TTS thread eagerly
-_t = threading.Thread(target=_tts_worker, daemon=True)
-_t.start()
 
 def speak(text: str):
-    """
-    Queue text to be spoken out loud. 
-    Non-blocking. Thread-safe.
-    """
+    """Queue text for speech. Non-blocking."""
     _q.put(text)
+
+
+def stop_speaking():
+    """
+    S5 fix: interrupt current speech and discard all queued items.
+    Call this when user submits a new message or hits Stop.
+    """
+    _stop.set()
+    # Drain the queue
+    while not _q.empty():
+        try:
+            _q.get_nowait()
+        except Exception:
+            break
+    try:
+        # Re-init engine to force-stop current utterance
+        engine = pyttsx3.init()
+        engine.stop()
+    except Exception:
+        pass
+
+
+_t = threading.Thread(target=_tts_worker, daemon=True)
+_t.start()

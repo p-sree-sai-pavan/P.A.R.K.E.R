@@ -54,9 +54,8 @@ tracks your projects, manages reminders without nagging, and recalls conversatio
 ### 🎙️ Multimodal I/O
 - **Voice input** — Whisper (faster-whisper) + Silero VAD for auto-stop on silence
 - **Voice output** — pyttsx3 text-to-speech, fully local, zero latency
-- **Desktop GUI** — PySide6 premium dark theme with streaming markdown
-- **CLI mode** — text/voice switchable terminal interface
-- **API server** — FastAPI + WebSocket for streaming integration
+- **Terminal UI** — Premium cyberpunk-themed interface using Rich
+- **CLI mode** — text/voice switchable execution
 
 </td>
 <td width="50%">
@@ -79,12 +78,12 @@ tracks your projects, manages reminders without nagging, and recalls conversatio
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          ENTRY POINTS                                │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────┐   ┌──────────────┐  │
-│  │ app.py   │   │ main.py  │   │ api/main.py  │   │ reminder.py  │  │
-│  │ (GUI)    │   │ (CLI)    │   │ (FastAPI)    │   │ (Poller)     │  │
-│  └────┬─────┘   └────┬─────┘   └──────┬───────┘   └──────┬───────┘  │
-│       │              │                │                   │          │
-│       └──────────────┴────────────────┴───────────────────┘          │
+│                 ┌──────────┐                  ┌──────────────┐       │
+│                 │ main.py  │                  │ reminder.py  │       │
+│                 │ (CLI)    │                  │ (Poller)     │       │
+│                 └────┬─────┘                  └──────┬───────┘       │
+│                      │                               │               │
+│                      └───────────────────────────────┘               │
 │                              │                                       │
 │                    ┌─────────▼──────────┐                            │
 │                    │     graph.py       │  LangGraph Orchestration    │
@@ -191,42 +190,11 @@ GROQ_API_KEY=gsk_your_key_here
 
 ### 5. Launch
 
-<table>
-<tr>
-<td align="center"><b>🖥️ Desktop GUI</b></td>
-<td align="center"><b>⌨️ Terminal CLI</b></td>
-<td align="center"><b>🌐 API Server</b></td>
-</tr>
-<tr>
-<td>
-
-```bash
-python app.py
-```
-
-or double-click `run_parker.bat`
-
-</td>
-<td>
-
 ```bash
 python main.py
 ```
 
-Supports text + voice mode switching
-
-</td>
-<td>
-
-```bash
-python api/main.py
-```
-
-FastAPI on `http://localhost:8000`
-
-</td>
-</tr>
-</table>
+Supports text + voice mode switching natively with a rich cyberpunk UI. You can also double-click `run_parker.bat` on Windows.
 
 ---
 
@@ -383,47 +351,14 @@ gate.evaluate_item()
 
 ---
 
-## 🌐 API Reference
-
-Start the API server with `python api/main.py` (runs on `http://localhost:8000`).
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check — returns `{"status": "online"}` |
-| `POST` | `/chat` | Send message, get response |
-| `WS` | `/ws/chat` | WebSocket streaming chat |
-| `GET` | `/memory/tasks` | List all pending tasks |
-| `GET` | `/memory/projects` | List all active projects |
-| `GET` | `/memory/profile` | Get user profile |
-
-### Chat Request
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What projects am I working on?"}'
-```
-
-### WebSocket Streaming
-
-```javascript
-const ws = new WebSocket("ws://localhost:8000/ws/chat");
-ws.send("Help me debug this function");
-ws.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  if (data.type === "token") process.stdout.write(data.content);
-  if (data.type === "done") console.log("\n--- Done ---");
-};
-```
-
 ---
 
 ## 📁 Project Structure
 
 ```
 P.A.R.K.E.R/
-├── app.py                  # Desktop GUI (PySide6) — premium dark theme
 ├── main.py                 # CLI entry point — text/voice modes
+├── interface.py            # Premium cyberpunk terminal interface (Rich)
 ├── graph.py                # LangGraph state machine orchestration
 ├── models.py               # Dual-LLM configuration (Groq + Ollama)
 ├── prompts.py              # All system & extraction prompts
@@ -444,9 +379,6 @@ P.A.R.K.E.R/
 │   ├── gate.py             # Storage gate — reject/candidate/store
 │   ├── reminder_gate.py    # Display gate — suppress nagging
 │   └── utils.py            # Shared: search, parse, format
-│
-├── api/
-│   └── main.py             # FastAPI server with WebSocket streaming
 │
 ├── docker-compose.yaml     # pgvector PostgreSQL container
 ├── requirements.txt        # Python dependencies
@@ -469,8 +401,7 @@ P.A.R.K.E.R/
 | **Checkpointing** | LangGraph PostgresSaver | Conversation history across sessions |
 | **Voice Input** | faster-whisper + Silero VAD | Speech-to-text with auto-stop |
 | **Voice Output** | pyttsx3 (SAPI5) | Local text-to-speech |
-| **Desktop GUI** | PySide6 (Qt) | Premium dark-themed interface |
-| **API** | FastAPI + WebSockets | REST + streaming endpoints |
+| **Terminal UI** | Rich (Python) | Premium cyberpunk-themed interface |
 | **Infrastructure** | Docker Compose | One-command database setup |
 
 ---

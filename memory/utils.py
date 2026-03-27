@@ -1,11 +1,26 @@
+import re
 import json
+import threading
 
+
+# ── Namespace locks (D2 fix) ───────────────────────────────────────────────────
+# Prevents concurrent read-write races when multiple background threads
+# write to the same namespace simultaneously.
+
+_ns_locks: dict       = {}
+_ns_locks_lock        = threading.Lock()
+
+def get_ns_lock(namespace: tuple) -> threading.Lock:
+    key = str(namespace)
+    with _ns_locks_lock:
+        if key not in _ns_locks:
+            _ns_locks[key] = threading.Lock()
+        return _ns_locks[key]
+
+
+# ── Message formatting ─────────────────────────────────────────────────────────
 
 def format_messages(messages: list) -> str:
-    """
-    Shared message formatter used by all memory modules.
-    Handles both LangChain message objects and raw dicts.
-    """
     lines = []
     for m in messages:
         if hasattr(m, "type"):
@@ -17,14 +32,11 @@ def format_messages(messages: list) -> str:
     return "\n".join(lines)
 
 
+# ── JSON parsing ───────────────────────────────────────────────────────────────
+
 def parse_json_object(text: str) -> dict:
-    """
-    Safely parse LLM response as a JSON object.
-    Strips markdown fences if present.
-    Returns empty dict on failure.
-    """
     try:
-        text = _strip_fences(text)
+        text   = _strip_fences(text)
         result = json.loads(text)
         return result if isinstance(result, dict) else {}
     except Exception:
@@ -32,24 +44,17 @@ def parse_json_object(text: str) -> dict:
 
 
 def parse_json_array(text: str) -> list:
-    """
-    Safely parse LLM response as a JSON array.
-    Strips markdown fences if present.
-    Returns empty list on failure.
-    """
     try:
-        text = _strip_fences(text)
+        text   = _strip_fences(text)
         result = json.loads(text)
         return result if isinstance(result, list) else []
     except Exception:
         return []
 
 
+# ── Store helpers ──────────────────────────────────────────────────────────────
+
 def semantic_search(store, namespace: tuple, query: str, limit: int) -> list:
-    """
-    Semantic search with a query string.
-    Use when you want relevance-ranked results.
-    """
     try:
         return store.search(namespace, query=query, limit=limit)
     except Exception as e:
@@ -58,14 +63,6 @@ def semantic_search(store, namespace: tuple, query: str, limit: int) -> list:
 
 
 def full_scan(store, namespace: tuple) -> list:
-    """
-    Plain scan — returns all items in a namespace.
-    Use when you need everything regardless of relevance:
-    - Loading all critical facts
-    - Loading all active projects
-    - Loading all pending tasks for condition checking
-    - Archival scans
-    """
     try:
         return store.search(namespace)
     except Exception as e:
@@ -74,10 +71,6 @@ def full_scan(store, namespace: tuple) -> list:
 
 
 def deduplicate(items_a: list, items_b: list) -> list:
-    """
-    Merge two result lists, removing duplicates by key.
-    items_a takes priority (its values are kept on collision).
-    """
     seen = {}
     for item in items_a:
         seen[item.key] = item
@@ -87,12 +80,15 @@ def deduplicate(items_a: list, items_b: list) -> list:
     return list(seen.values())
 
 
+# ── Internal ───────────────────────────────────────────────────────────────────
+
 def _strip_fences(text: str) -> str:
+    """
+    M3 fix: use regex instead of split() to reliably extract JSON
+    from markdown fences regardless of spacing or multiple blocks.
+    """
     text = text.strip()
-    if "```" in text:
-        parts = text.split("```")
-        # parts[1] is the content inside fences
-        text = parts[1]
-        if text.startswith("json"):
-            text = text[4:]
-    return text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if match:
+        return match.group(1).strip()
+    return text
