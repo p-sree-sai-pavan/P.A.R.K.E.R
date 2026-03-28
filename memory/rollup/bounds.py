@@ -16,6 +16,3 @@ def _crossed_month(last: datetime, today: datetime) -> bool:
 
 def _crossed_year(last: datetime, today: datetime) -> bool:
     return last.year != today.year
-
-def _crossed_decade(last: datetime, today: datetime) -> bool:
-    return (last.year // 10) != (today.year // 10)

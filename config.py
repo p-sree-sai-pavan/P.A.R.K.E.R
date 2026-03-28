@@ -56,7 +56,6 @@ EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))
 # Reminder Configuration
 # ════════════════════════════════════════════════════════════════════════════════
 
-REMINDER_POLL_INTERVAL = int(os.getenv("REMINDER_POLL_INTERVAL", "30"))  # seconds
 
 
 # ════════════════════════════════════════════════════════════════════════════════

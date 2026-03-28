@@ -80,18 +80,3 @@ MONTHS:
 {months}
 
 Return only the JSON object."""
-
-
-DECADE_ROLLUP_PROMPT = """Summarize this decade from yearly summaries.
-
-OUTPUT:
-{{
-  "summary": "2-3 sentences: arc-level view of this decade's trajectory.",
-  "key_topics": ["5 defining themes"]
-}}
-
-DECADE: {decade_label}
-YEARS:
-{years}
-
-Return only the JSON object."""

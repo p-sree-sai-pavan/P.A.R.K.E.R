@@ -1,12 +1,15 @@
 # mouth.py — Text → Speech
 
 import re
+import sys
 import pyttsx3
 import threading
 import queue
 
 _q    = queue.Queue()
 _stop = threading.Event()
+_engine_lock = threading.Lock()
+_current_engine = None
 
 
 def _clean(text: str) -> str:
@@ -23,14 +26,6 @@ def _clean(text: str) -> str:
 
 
 def _tts_worker():
-    try:
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 175)
-        engine.setProperty("volume", 1.0)
-    except Exception as e:
-        print(f"TTS Init Error: {e}")
-        return
-
     while True:
         text = _q.get()
         if text is None:
@@ -38,12 +33,16 @@ def _tts_worker():
 
         # S5 fix: discard queued items if stop was requested
         if _stop.is_set():
+            _stop.clear()
             continue
 
         try:
+            cleaned = _clean(text)
+            if not cleaned:
+                continue
+
             _stop.clear()
-            engine.say(_clean(text))
-            engine.runAndWait()
+            _speak_once(cleaned)
         except Exception as e:
             print(f"TTS Speech Error: {e}")
 
@@ -65,12 +64,54 @@ def stop_speaking():
             _q.get_nowait()
         except Exception:
             break
+    with _engine_lock:
+        engine = _current_engine
+    if engine is not None:
+        try:
+            engine.stop()
+        except Exception:
+            pass
+
+
+def _speak_once(text: str):
+    global _current_engine
+
+    pythoncom = None
+    if sys.platform == "win32":
+        try:
+            import pythoncom as _pythoncom
+            pythoncom = _pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pythoncom = None
+
+    engine = None
     try:
-        # Re-init engine to force-stop current utterance
         engine = pyttsx3.init()
-        engine.stop()
-    except Exception:
-        pass
+        engine.setProperty("rate", 175)
+        engine.setProperty("volume", 1.0)
+
+        with _engine_lock:
+            _current_engine = engine
+
+        engine.say(text)
+        engine.runAndWait()
+    finally:
+        if engine is not None:
+            try:
+                engine.stop()
+            except Exception:
+                pass
+
+        with _engine_lock:
+            if _current_engine is engine:
+                _current_engine = None
+
+        if pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
 
 
 _t = threading.Thread(target=_tts_worker, daemon=True)

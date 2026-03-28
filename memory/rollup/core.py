@@ -1,82 +1,85 @@
-# memory/rollup/core.py
-import threading
 from datetime import datetime, timedelta
 
-from memory.utils import get_ns_lock
-from .bounds import (
-    _crossed_week, _crossed_month,
-    _crossed_year, _crossed_decade
-)
-from .summarizers import (
-    _rollup_day, _rollup_week, _rollup_month,
-    _rollup_year, _rollup_decade
-)
+from memory.utils import full_scan, get_ns_lock
+from .bounds import _crossed_month, _crossed_week, _crossed_year
+from .summarizers import _rollup_day, _rollup_month, _rollup_week, _rollup_year
 
+NS_CHAT = lambda user_id: ("user", user_id, "mem", "chat")
+NS_DAY = lambda user_id: ("user", user_id, "mem", "day")
 NS_STATE = lambda user_id: ("user", user_id, "state")
 
 
 def rollup_if_needed(store, user_id: str):
-    t = threading.Thread(target=_run_rollup, args=(store, user_id), daemon=True)
-    t.start()
-
-
-def _run_rollup(store, user_id: str):
     with get_ns_lock(("user", user_id, "rollup_lock")):
-        last_session_date = None
-        state_item = store.get(NS_STATE(user_id), "last_session")
-        if state_item:
-            last_session_date = state_item.value.get("date")
+        _rollup_closed_periods(store, user_id)
 
-        from memory.utils import full_scan
-        existing_days = full_scan(store, ("user", user_id, "mem", "day"))
 
-        if not last_session_date or not existing_days:
-            # Bootstrap for legacy databases: if no state exists or bootstrap failed, start from oldest chat
-            all_chats = full_scan(store, ("user", user_id, "mem", "chat"))
-            if not all_chats:
-                return
-            oldest_key = min(c.key for c in all_chats)
-            last_session_date = oldest_key.split("T")[0]
+def refresh_active_rollups(store, user_id: str):
+    """
+    Refresh the current open summary tree from existing chat/day/week/month data.
+    This keeps the hierarchy available even before a time boundary is crossed.
+    """
+    with get_ns_lock(("user", user_id, "rollup_lock")):
+        now = datetime.now()
+        day_key = now.strftime("%Y-%m-%d")
+        iso_year, iso_week, _ = now.isocalendar()
+        week_key = f"{iso_year}-W{iso_week:02d}"
+        month_key = now.strftime("%Y-%m")
+        year_key = now.strftime("%Y")
 
-        try:
-            today_dt = datetime.now()
-            last_dt  = datetime.fromisoformat(last_session_date)
-            
-            # Ensure we don't get stuck in an infinite loop if parsing fails timezone etc,
-            # though isoformat usually yields naive datetimes here.
-            
-            # LOGIC FIX: Iterate through all missing days sequentially to catch gaps
-            current_dt = last_dt
-            
-            # Cap at 100 days just to prevent catastrophic looping if dates are completely corrupted
-            max_iterations = 100
-            iterations = 0
+        _rollup_day(store, user_id, day_key)
+        _rollup_week(store, user_id, week_key)
+        _rollup_month(store, user_id, month_key)
+        _rollup_year(store, user_id, year_key)
 
-            while current_dt.date() < today_dt.date() and iterations < max_iterations:
-                day_str = current_dt.strftime("%Y-%m-%d")
-                
-                # Roll up this specific day
-                _rollup_day(store, user_id, day_str)
 
-                next_dt = current_dt + timedelta(days=1)
+def _rollup_closed_periods(store, user_id: str):
+    last_session_date = None
+    state_item = store.get(NS_STATE(user_id), "last_session")
+    if state_item:
+        last_session_date = state_item.value.get("date")
 
-                # Check boundaries crossed moving from current_dt to next_dt
-                if _crossed_week(current_dt, next_dt):
-                    iso_year, iso_week, _ = current_dt.isocalendar()
-                    _rollup_week(store, user_id, f"{iso_year}-W{iso_week:02d}")
+    if not last_session_date:
+        existing_days = full_scan(store, NS_DAY(user_id))
+        if existing_days:
+            last_session_date = min(item.key for item in existing_days)
 
-                if _crossed_month(current_dt, next_dt):
-                    _rollup_month(store, user_id, current_dt.strftime("%Y-%m"))
+    if not last_session_date:
+        all_chats = full_scan(store, NS_CHAT(user_id))
+        if not all_chats:
+            return
+        last_session_date = min(chat.key for chat in all_chats).split("T")[0]
 
-                if _crossed_year(current_dt, next_dt):
-                    _rollup_year(store, user_id, current_dt.strftime("%Y"))
-                    
-                if _crossed_decade(current_dt, next_dt):
-                    decade_start = (current_dt.year // 10) * 10
-                    _rollup_decade(store, user_id, f"{decade_start}s")
+    try:
+        today_dt = datetime.now()
+        last_dt = datetime.fromisoformat(last_session_date)
 
-                current_dt = next_dt
-                iterations += 1
+        if last_dt.date() >= today_dt.date():
+            return
 
-        except Exception as e:
-            print(f"[Rollup] Failed to complete sequentially: {e}")
+        current_dt = last_dt
+        days_to_process = (today_dt.date() - last_dt.date()).days
+        max_iterations = min(days_to_process + 1, 3660)
+
+        for _ in range(max_iterations):
+            if current_dt.date() >= today_dt.date():
+                break
+
+            day_str = current_dt.strftime("%Y-%m-%d")
+            _rollup_day(store, user_id, day_str)
+
+            next_dt = current_dt + timedelta(days=1)
+            if _crossed_week(current_dt, next_dt):
+                iso_year, iso_week, _ = current_dt.isocalendar()
+                _rollup_week(store, user_id, f"{iso_year}-W{iso_week:02d}")
+
+            if _crossed_month(current_dt, next_dt):
+                _rollup_month(store, user_id, current_dt.strftime("%Y-%m"))
+
+            if _crossed_year(current_dt, next_dt):
+                _rollup_year(store, user_id, current_dt.strftime("%Y"))
+
+            current_dt = next_dt
+
+    except Exception as e:
+        print(f"[Rollup] Failed to complete sequentially: {e}")

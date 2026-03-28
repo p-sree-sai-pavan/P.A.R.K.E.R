@@ -17,8 +17,8 @@ echo [Parker] Ensuring database is active...
 docker compose up -d
 
 :: Run the application
-echo [Parker] Launching Parker UI...
-python app.py
+echo [Parker] Launching Parker CLI...
+python main.py
 
 if %errorlevel% neq 0 (
     echo [Error] Parker failed to start.

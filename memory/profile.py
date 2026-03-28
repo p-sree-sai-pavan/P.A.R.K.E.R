@@ -1,10 +1,15 @@
 import json
-import threading
 from langchain_core.messages import SystemMessage
 
 from models import memory_llm
 from prompts.memory import PROFILE_EXTRACTION_PROMPT
-from memory.utils import format_messages, parse_json_object, full_scan, get_ns_lock
+from memory.utils import (
+    format_messages,
+    parse_json_object,
+    full_scan,
+    get_ns_lock,
+    start_background_job,
+)
 
 
 PROFILE_KEY = "profile"
@@ -17,12 +22,13 @@ def load_profile(store, user_id: str) -> dict:
 
 
 def save_profile(store, user_id: str, messages: list):
-    t = threading.Thread(
-        target=_extract_and_save,
-        args=(store, user_id, messages),
-        daemon=True,
+    start_background_job(
+        _extract_and_save,
+        store,
+        user_id,
+        messages,
+        name="profile-save",
     )
-    t.start()
 
 
 def _extract_and_save(store, user_id: str, messages: list):

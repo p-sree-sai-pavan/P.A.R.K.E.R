@@ -1,499 +1,217 @@
-<div align="center">
-
-<img src="parker_icon.png" width="120" alt="Parker AI Logo" />
-
 # P.A.R.K.E.R.
 
-### **Personal AI with Retrieval, Knowledge, Episodic memory & Reminders**
+Persistent AI assistant with a real memory system.
 
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrated-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
-[![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=for-the-badge)](https://groq.com)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-000000?style=for-the-badge)](https://ollama.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-A855F7?style=for-the-badge)](LICENSE)
+Parker is a CLI-first assistant that remembers you across sessions using PostgreSQL, pgvector, and a hierarchical episodic memory tree:
 
-**An AI assistant that actually remembers you.**
-Not a chatbot with a context window — a persistent memory system that learns who you are,
-tracks your projects, manages reminders without nagging, and recalls conversations from months ago.
+`chat -> day -> week -> month -> year`
 
-[Features](#-features) · [Architecture](#%EF%B8%8F-architecture) · [Quickstart](#-quickstart) · [Configuration](#%EF%B8%8F-configuration) · [Memory System](#-the-memory-system) · [API](#-api-reference)
+The current repo is intentionally simple:
 
----
+- no web UI
+- no GUI app
+- no reminder system
+- no task engine
 
-</div>
+The focus is memory, retrieval, and clean terminal chat.
 
-## ✨ Features
+## What It Does
 
-<table>
-<tr>
-<td width="50%">
+- Stores long-lived profile information
+- Stores important facts about you
+- Tracks projects across sessions
+- Stores chat-level summaries for each exchange
+- Rolls chat summaries up into day, week, month, and year summaries
+- Retrieves through the memory tree instead of scanning everything
+- Supports text mode and voice mode in the terminal
 
-### 🧠 Persistent Memory
-- **Profile learning** — automatically extracts and updates who you are
-- **Fact extraction** — stores discrete facts with importance levels (`critical` → `low`)
-- **Project tracking** — multi-session projects with decisions log, stack, and open threads
-- **Episodic memory** — hierarchical rollup: `chat → day → week → month → year → decade`
-- **Semantic search** — finds relevant memories via pgvector embeddings, not keyword matching
+## Current Architecture
 
-</td>
-<td width="50%">
+### Runtime
 
-### 🔔 Intelligent Reminders
-- **Psychology-based gating** — never nags, never fires on greetings/acknowledgments
-- **Data-driven conditions** — `specific_time`, `time_range`, `on_mention`, `before_next_session`
-- **Priority-based snooze** — urgent resurfaces every session, low waits 5 sessions
-- **Completion detection** — "I already did that" → auto-marks done, never mentions again
-- **Candidate promotion** — vague tasks become candidates, only promoted on reconfirmation
+- `main.py`
+  - CLI entry point
+  - terminal UI
+  - session startup and shutdown
+- `graph.py`
+  - LangGraph flow
+  - trigger -> retrieve -> chat -> remember
+- `retrieval.py`
+  - builds memory context for the chat model
+- `database.py`
+  - PostgreSQL store, vector index, and checkpointer setup
 
-</td>
-</tr>
-<tr>
-<td width="50%">
+### Memory Modules
 
-### 🎙️ Multimodal I/O
-- **Voice input** — Whisper (faster-whisper) + Silero VAD for auto-stop on silence
-- **Voice output** — pyttsx3 text-to-speech, fully local, zero latency
-- **Terminal UI** — Premium cyberpunk-themed interface using Rich
-- **CLI mode** — text/voice switchable execution
+- `memory/profile.py`
+  - stable identity and preference memory
+- `memory/facts.py`
+  - discrete user facts
+- `memory/projects.py`
+  - multi-session project memory
+- `memory/episodes.py`
+  - chat summary storage and episodic retrieval
+- `memory/rollup/core.py`
+  - rollup orchestration
+- `memory/rollup/summarizers.py`
+  - day, week, month, and year summary generation
+- `memory/utils.py`
+  - shared store helpers
 
-</td>
-<td width="50%">
+### Models
 
-### ⚡ Dual-LLM Architecture
-- **Chat LLM** — Groq Llama 3.3 70B for high-quality responses
-- **Memory LLM** — Ollama Qwen 2.5 3B for fast, local extraction
-- **Smart trigger** — skips memory operations on casual chat (saves LLM calls)
-- **Streaming** — token-by-token response streaming in GUI and WebSocket
-- **Background processing** — memory extraction runs after response, never blocks
+- Chat model
+  - primary user-facing response generation
+- Memory model
+  - trigger routing
+  - memory extraction
+  - episode summarization
+  - rollup summarization
+- Embedding model
+  - semantic retrieval in pgvector
 
-</td>
-</tr>
-</table>
+## Memory Flow
 
----
+Each successful turn is summarized and stored at the chat level.
 
-## 🏗️ Architecture
+Over time Parker rolls those summaries upward:
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          ENTRY POINTS                                │
-│                 ┌──────────┐                  ┌──────────────┐       │
-│                 │ main.py  │                  │ reminder.py  │       │
-│                 │ (CLI)    │                  │ (Poller)     │       │
-│                 └────┬─────┘                  └──────┬───────┘       │
-│                      │                               │               │
-│                      └───────────────────────────────┘               │
-│                              │                                       │
-│                    ┌─────────▼──────────┐                            │
-│                    │     graph.py       │  LangGraph Orchestration    │
-│                    │  (State Machine)   │                            │
-│                    └─────────┬──────────┘                            │
-│                              │                                       │
-│         ┌────────────────────┼────────────────────┐                  │
-│         ▼                    ▼                    ▼                  │
-│  ┌─────────────┐   ┌────────────────┐   ┌──────────────┐           │
-│  │  trigger     │   │   retrieve     │   │    chat      │           │
-│  │  (Memory LLM)│   │  (retrieval.py)│   │  (Chat LLM)  │           │
-│  │  Should I    │   │  Build 7-layer │   │  Generate     │           │
-│  │  remember?   │   │  context       │   │  response     │           │
-│  └──────┬───────┘   └────────┬───────┘   └──────┬───────┘           │
-│         │                    │                   │                   │
-│         │                    │                   ▼                   │
-│         │                    │           ┌──────────────┐            │
-│         │                    │           │   remember   │            │
-│         │                    │           │  Extract &   │            │
-│         │                    │           │  store new   │            │
-│         │                    │           │  memories    │            │
-│         │                    │           └──────────────┘            │
-│         │                    │                                       │
-│         │                    ▼                                       │
-│  ┌──────┴────────────────────────────────────────────────────────┐   │
-│  │                    MEMORY LAYER (memory/)                     │   │
-│  │  ┌──────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌────────┐  │   │
-│  │  │ profile  │ │ facts  │ │ tasks  │ │ projects │ │episodes│  │   │
-│  │  │ (.py)    │ │ (.py)  │ │ (.py)  │ │ (.py)    │ │ (.py)  │  │   │
-│  │  └──────────┘ └────────┘ └────────┘ └──────────┘ └────────┘  │   │
-│  │  ┌──────────┐ ┌────────────────┐ ┌──────────┐ ┌───────────┐  │   │
-│  │  │  gate    │ │ reminder_gate  │ │  rollup  │ │  utils    │  │   │
-│  │  │ (store)  │ │ (display)      │ │ (5-level)│ │ (shared)  │  │   │
-│  │  └──────────┘ └────────────────┘ └──────────┘ └───────────┘  │   │
-│  └───────────────────────────┬───────────────────────────────────┘   │
-│                              │                                       │
-│                    ┌─────────▼──────────┐                            │
-│                    │   PostgreSQL       │  pgvector + LangGraph       │
-│                    │   (database.py)    │  Store & Checkpointer      │
-│                    └────────────────────┘                            │
-└──────────────────────────────────────────────────────────────────────┘
+- new day -> previous day's chats -> day summary
+- new week -> previous week's days -> week summary
+- new month -> previous month's weeks -> month summary
+- new year -> previous year's months -> year summary
+
+When you ask a memory-related question, Parker searches the memory tree for relevant summaries instead of trying to stuff all past chats into the prompt.
+
+## Graph Flow
+
+```text
+START -> trigger -> retrieve -> chat -> remember -> END
 ```
 
-### Graph Flow
+- `trigger`
+  - decides whether retrieval and storage are needed
+- `retrieve`
+  - builds memory context from profile, facts, projects, episodes, and current time
+- `chat`
+  - produces the user-facing answer
+- `remember`
+  - updates profile, facts, and projects in background threads
 
-```
-START → trigger → retrieve → chat → remember → END
-```
+## Requirements
 
-| Node | LLM | Purpose |
-|------|-----|---------|
-| **trigger** | Memory LLM | Decides if retrieval/storage is needed (skips on "hello", "ok") |
-| **retrieve** | Memory LLM | Builds 7-layer context: profile, projects, critical facts, relevant facts, reminders, episodes, time |
-| **chat** | Chat LLM | Generates the user-facing response — **only node that streams** |
-| **remember** | Memory LLM | Extracts facts, profile updates, tasks, project changes in background threads |
+- Python 3.11+
+- Docker Desktop
+- Ollama
+- Groq API key if using Groq for the chat model
 
----
+## Quickstart
 
-## 🚀 Quickstart
-
-### Prerequisites
-
-| Requirement | Purpose |
-|-------------|---------|
-| [Python 3.11+](https://python.org) | Runtime |
-| [Docker Desktop](https://docker.com) | PostgreSQL + pgvector database |
-| [Ollama](https://ollama.com) | Local memory LLM + embeddings |
-| [Groq API Key](https://console.groq.com) | Chat LLM (free tier available) |
-
-### 1. Clone & Install
+### 1. Install dependencies
 
 ```bash
-git clone https://github.com/p-sree-sai-pavan/P.A.R.K.E.R.git
-cd P.A.R.K.E.R
 pip install -r requirements.txt
 ```
 
-### 2. Pull Ollama Models
+### 2. Pull Ollama models
 
 ```bash
-ollama pull qwen2.5:3b          # Memory extraction LLM
-ollama pull mxbai-embed-large   # Embedding model (1024 dims)
+ollama pull qwen2.5:3b
+ollama pull mxbai-embed-large
 ```
 
-### 3. Start Database
+### 3. Start the database
 
 ```bash
 docker compose up -d
 ```
 
-> This starts pgvector/pgvector:pg16 on port **5442**.
+This starts PostgreSQL with pgvector on port `5442`.
 
-### 4. Configure Environment
+### 4. Configure `.env`
+
+Copy the example file and add your API key if needed:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and add your Groq API key:
+Example:
 
 ```env
 GROQ_API_KEY=gsk_your_key_here
 ```
 
-### 5. Launch
+### 5. Run Parker
 
 ```bash
 python main.py
 ```
 
-Supports text + voice mode switching natively with a rich cyberpunk UI. You can also double-click `run_parker.bat` on Windows.
-
----
-
-## ⚙️ Configuration
-
-All settings are managed via environment variables (`.env` file). See [`.env.example`](.env.example) for the full template.
-
-### LLM Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHAT_LLM_PROVIDER` | `groq` | Chat LLM provider (`groq` or `ollama`) |
-| `CHAT_LLM_MODEL` | `llama-3.3-70b-versatile` | Chat model name |
-| `CHAT_LLM_TEMPERATURE` | `0.7` | Response creativity (0.0–1.0) |
-| `CHAT_LLM_MAX_TOKENS` | `1024` | Max response length |
-| `MEMORY_LLM_PROVIDER` | `ollama` | Memory LLM provider (`ollama` or `groq`) |
-| `MEMORY_LLM_MODEL` | `qwen2.5:3b` | Memory extraction model |
-| `EMBEDDING_MODEL` | `mxbai-embed-large` | Ollama embedding model |
-| `EMBEDDING_DIMS` | `1024` | Embedding dimensions |
-
-### Database Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_URI` | `postgresql://postgres:postgres@localhost:5442/postgres` | PostgreSQL connection string |
-| `DB_MAX_RETRIES` | `3` | Connection retry attempts |
-| `DB_RETRY_DELAY` | `2.0` | Delay between retries (seconds) |
-
-### API Keys
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GROQ_API_KEY` | Yes (if using Groq) | Get free at [console.groq.com](https://console.groq.com) |
-
----
-
-## 🧠 The Memory System
-
-Parker's memory isn't a monolithic blob. It's five specialized modules, each with its own storage strategy, search method, and lifecycle.
-
-### Memory Modules
-
-```mermaid
-graph TD
-    A["👤 Profile"] -->|"Single document, always loaded"| DB[(PostgreSQL + pgvector)]
-    B["📝 Facts"] -->|"Categorized, importance-ranked"| DB
-    C["✅ Tasks"] -->|"Condition-driven, snooze logic"| DB
-    D["📁 Projects"] -->|"Multi-session, decision log"| DB
-    E["📖 Episodes"] -->|"Hierarchical rollup"| DB
-
-    style A fill:#818cf8,stroke:#4f46e5,color:#fff
-    style B fill:#34d399,stroke:#059669,color:#fff
-    style C fill:#fb923c,stroke:#ea580c,color:#fff
-    style D fill:#f472b6,stroke:#db2777,color:#fff
-    style E fill:#60a5fa,stroke:#2563eb,color:#fff
-```
-
-<table>
-<tr>
-<th>Module</th>
-<th>What it stores</th>
-<th>Load strategy</th>
-<th>Lifecycle</th>
-</tr>
-<tr>
-<td><b>Profile</b></td>
-<td>Name, university, tools, preferences</td>
-<td>Full load every turn</td>
-<td>Permanent — overwritten on change</td>
-</tr>
-<tr>
-<td><b>Facts</b></td>
-<td>Discrete knowledge with importance</td>
-<td>Critical: full scan · Others: semantic search</td>
-<td><code>critical/high</code>: permanent · <code>normal</code>: archive at 365d · <code>low</code>: archive at 90d</td>
-</tr>
-<tr>
-<td><b>Tasks</b></td>
-<td>Reminders, goals, events</td>
-<td>Full scan + condition engine + reminder gate</td>
-<td>Completed → fades after <code>fade_after_days</code> · Recurring → resets on completion</td>
-</tr>
-<tr>
-<td><b>Projects</b></td>
-<td>Multi-step ongoing work</td>
-<td>Active: full scan · Historical: semantic search</td>
-<td>Completed/abandoned → auto-archived on session start</td>
-</tr>
-<tr>
-<td><b>Episodes</b></td>
-<td>Conversation summaries</td>
-<td>Hierarchical drill-down: decade → year → month → week → day → chat</td>
-<td>Auto-rolled up on time boundary crossings</td>
-</tr>
-</table>
-
-### Episodic Rollup Hierarchy
-
-Parker compresses conversations over time, just like human memory:
-
-```
-Session end → Chat entry written (raw summary)
-New day     → Yesterday's chats    → Day summary
-New week    → Last week's days     → Week summary
-New month   → Last month's weeks   → Month summary
-New year    → Last year's months   → Year summary
-New decade  → Last decade's years  → Decade summary
-```
-
-> **Search strategy:** When you ask "what did I work on last March?", Parker doesn't scan all 700 chat entries. It drills down: `decade → year → month → week → day → chat`, searching only 10–15 entries total.
-
-### Reminder Pipeline
-
-```
-User message
-    │
-    ▼
-check_conditions()          ← Time/keyword/condition matching
-    │
-    ▼
-reminder_gate.run()         ← Psychology-based suppression
-    │                         • Greeting? → suppress all
-    │                         • "ok"? → suppress all
-    │                         • Already discussed? → suppress
-    │                         • User completed it? → mark done
-    │
-    ▼
-Approved reminders only → injected into system prompt
-```
-
-### Memory Gate (Storage)
-
-Not everything the LLM extracts becomes a real memory:
-
-```
-LLM extracts task
-    │
-    ▼
-gate.evaluate_item()
-    │
-    ├── due time set?          → STORE  (100% intent)
-    ├── urgent/high priority?  → STORE  (95% confidence)
-    ├── time-bound condition?  → STORE  (95% confidence)
-    ├── speculative language?  → REJECT ("maybe", "thinking about")
-    ├── too short?             → REJECT (< 2 words)
-    ├── conditioned reminder?  → STORE  (85% confidence)
-    └── unconditioned?         → CANDIDATE (65% confidence)
-                                    │
-                                    ▼
-                            Candidate promoted if:
-                            • User mentions it again  OR
-                            • Confidence reaches 0.8+
-```
-
----
-
----
-
-## 📁 Project Structure
-
-```
-P.A.R.K.E.R/
-├── main.py                 # CLI entry point — text/voice modes
-├── interface.py            # Premium cyberpunk terminal interface (Rich)
-├── graph.py                # LangGraph state machine orchestration
-├── models.py               # Dual-LLM configuration (Groq + Ollama)
-├── prompts.py              # All system & extraction prompts
-├── retrieval.py            # 7-layer context assembly for each turn
-├── database.py             # PostgreSQL connection management
-├── config.py               # Centralized env-based configuration
-├── ears.py                 # Voice input — Whisper + Silero VAD
-├── mouth.py                # Voice output — pyttsx3 TTS
-├── reminder.py             # Background reminder polling thread
-│
-├── memory/                 # Memory subsystem
-│   ├── profile.py          # User identity (single document)
-│   ├── facts.py            # Facts with importance & archival
-│   ├── tasks.py            # Task extraction, conditions, snooze
-│   ├── projects.py         # Multi-session project tracking
-│   ├── episodes.py         # Episodic memory with drill-down search
-│   ├── rollup.py           # 5-level temporal rollup engine
-│   ├── gate.py             # Storage gate — reject/candidate/store
-│   ├── reminder_gate.py    # Display gate — suppress nagging
-│   └── utils.py            # Shared: search, parse, format
-│
-├── docker-compose.yaml     # pgvector PostgreSQL container
-├── requirements.txt        # Python dependencies
-├── .env.example            # Environment variable template
-├── run_parker.bat          # Windows one-click launcher
-└── parker_icon.png         # Application icon
-```
-
----
-
-## 🧩 Tech Stack
-
-| Layer | Technology | Role |
-|-------|-----------|------|
-| **Orchestration** | LangGraph | State machine for conversation flow |
-| **Chat LLM** | Groq (Llama 3.3 70B) | High-quality response generation |
-| **Memory LLM** | Ollama (Qwen 2.5 3B) | Fast local extraction & summarization |
-| **Embeddings** | Ollama (mxbai-embed-large) | 1024-dim vectors for semantic search |
-| **Database** | PostgreSQL + pgvector | Persistent storage + vector similarity |
-| **Checkpointing** | LangGraph PostgresSaver | Conversation history across sessions |
-| **Voice Input** | faster-whisper + Silero VAD | Speech-to-text with auto-stop |
-| **Voice Output** | pyttsx3 (SAPI5) | Local text-to-speech |
-| **Terminal UI** | Rich (Python) | Premium cyberpunk-themed interface |
-| **Infrastructure** | Docker Compose | One-command database setup |
-
----
-
-## 🧪 Design Principles
-
-> These aren't just guidelines — they're hard constraints enforced at every layer.
-
-### 1. **Memory is passive, never a script**
-Memory informs responses only when it improves accuracy. Parker never volunteers "You have a goal to..." unprompted.
-
-### 2. **Nagging destroys trust faster than being unhelpful**
-A reminder shown at the wrong time is worse than no reminder. Every reminder passes through a psychology-based gate before reaching the user.
-
-### 3. **Completion = closure**
-When you say "I finished that", the topic is dead for the session. No re-confirmation, no "great job!", no follow-up questions.
-
-### 4. **Acknowledgments are not queries**
-"ok", "got it", "thanks" are conversational closes. They never trigger reminders or new information.
-
-### 5. **Current message is absolute ground truth**
-What you're saying right now always overrides what memory says you said before.
-
----
-
-## 🔍 How Context is Built Per Turn
-
-Every time you send a message, `retrieval.py` assembles this context for the LLM:
-
-```
-1. Profile          → always full, no search
-2. Active projects  → always full (used as search context for facts)
-3. Critical facts   → always full (non-negotiable constraints)
-4. Relevant facts   → semantic search (message + project names)
-5. Archive facts    → semantic search (low-priority surface)
-6. Tasks/Reminders  → condition check → reminder gate → approved only
-7. Episodes         → hierarchical drill-down search
-8. Current time     → injected last
-```
-
----
-
-## 🤝 Contributing
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feat/your-feature`)
-3. **Commit** your changes (`git commit -m "feat: add new feature"`)
-4. **Push** to your branch (`git push origin feat/your-feature`)
-5. **Open** a Pull Request
-
-### Development Setup
+On Windows you can also use:
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/P.A.R.K.E.R.git
-cd P.A.R.K.E.R
-
-# Create virtual environment
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Pull required Ollama models
-ollama pull qwen2.5:3b
-ollama pull mxbai-embed-large
-
-# Start database
-docker compose up -d
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your GROQ_API_KEY
-
-# Run
-python app.py
+run_parker.bat
 ```
 
----
+## Configuration
 
-## 📄 License
+Settings live in `.env`.
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+Key variables:
 
----
+- `CHAT_LLM_PROVIDER`
+- `CHAT_LLM_MODEL`
+- `CHAT_LLM_TEMPERATURE`
+- `CHAT_LLM_MAX_TOKENS`
+- `MEMORY_LLM_PROVIDER`
+- `MEMORY_LLM_MODEL`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIMS`
+- `DB_URI`
+- `DB_MAX_RETRIES`
+- `DB_RETRY_DELAY`
+- `GROQ_API_KEY`
 
-<div align="center">
+See [`.env.example`](.env.example) for the full template.
 
-**Built with intent by [Pavan](https://github.com/p-sree-sai-pavan)**
+## Project Layout
 
-*Parker doesn't just chat — it remembers.*
+```text
+Parker/
+|-- main.py
+|-- graph.py
+|-- retrieval.py
+|-- database.py
+|-- models.py
+|-- interface.py
+|-- ears.py
+|-- mouth.py
+|-- prompts/
+|   |-- chat.py
+|   `-- rollup.py
+|-- memory/
+|   |-- episodes.py
+|   |-- facts.py
+|   |-- profile.py
+|   |-- projects.py
+|   |-- utils.py
+|   `-- rollup/
+|       |-- __init__.py
+|       |-- bounds.py
+|       |-- core.py
+|       `-- summarizers.py
+|-- docker-compose.yml
+|-- requirements.txt
+`-- run_parker.bat
+```
 
-</div>
+## Notes
+
+- The active episodic memory path is summary-based, not exact raw-transcript replay.
+- For the cleanest behavior after large architecture changes, reset the database and start fresh.
+- Voice input and output are still supported in the terminal runtime.
+
+## License
+
+MIT
