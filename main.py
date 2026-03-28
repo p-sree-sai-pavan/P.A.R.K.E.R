@@ -109,55 +109,95 @@ if __name__ == "__main__":
 
     mode = "text"
 
+    """
+main.py — Parker AI CLI runtime
+Updated to use the improved interface.py rendering.
+Only the session loop is shown — startup/shutdown code is unchanged.
+"""
+
+# ── (after all the existing imports and setup) ─────────────────────────────────
+# Replace the `while True` loop inside `if __name__ == "__main__":` with this:
+
     try:
         while True:
+            # ── Get input ─────────────────────────────────────────────────────
             if mode == "text":
-                user_input = interface.console.input(interface.get_user_prompt("text")).strip()
-                if user_input.lower() == "v":
-                    mode = "voice"
-                    interface.print_system("Switched to VOICE mode. Type 't' to switch back.")
-                    continue
+                user_input = interface.console.input(
+                    interface.get_user_prompt("text")
+                ).strip()
             else:
-                cmd = interface.console.input(interface.get_user_prompt("voice")).strip()
-                if cmd.lower() == "t":
-                    mode = "text"
-                    interface.print_system("Switched to TEXT mode. Type 'v' to switch to voice.")
-                    continue
+                interface.console.input(
+                    interface.get_user_prompt("voice")
+                )
                 user_input = listen()
 
             if not user_input:
-                interface.print_warning("Didn't catch that, try again.")
+                interface.print_warning("Didn't catch that — try again.")
                 continue
 
-            if user_input.lower() in ("quit", "exit", "bye"):
+            # ── Commands ──────────────────────────────────────────────────────
+            lower = user_input.lower()
+
+            if lower in ("quit", "exit", "bye"):
                 speak("Goodbye!")
                 interface.print_goodbye()
                 break
 
-            if user_input.lower() == "/clear":
+            if lower == "v":
+                mode = "voice"
+                interface.print_mode_switch("voice")
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                continue
+
+            if lower == "t":
+                mode = "text"
+                interface.print_mode_switch("text")
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                continue
+
+            if lower == "/clear":
                 interface.clear_screen()
                 interface.print_parker_banner()
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                interface.print_commands_table()
                 interface.print_divider()
                 continue
 
-            if user_input.lower() == "/profile":
+            if lower == "/profile":
                 from memory.profile import load_profile
                 prof = load_profile(store, USER_ID)
                 interface.print_profile_panel(prof)
                 continue
 
+            if lower == "/facts":
+                from memory.facts import full_scan, NAMESPACE
+                raw = full_scan(store, NAMESPACE(USER_ID))
+                facts_list = [{"key": i.key, "content": i.value.get("content",""), "importance": i.value.get("importance","normal")} for i in raw]
+                interface.print_facts_panel(facts_list)
+                continue
+
+            if lower == "/projects":
+                from memory.projects import load_active_projects
+                projs = load_active_projects(store, USER_ID)
+                interface.print_projects_panel(projs)
+                continue
+
+            # ── Echo user message ─────────────────────────────────────────────
+            interface.print_user(user_input)
+
+            # ── Generate response ─────────────────────────────────────────────
             response = ask(graph, user_input)
 
             if response != "(API Error - Please retry)":
                 write_chat_turn(store, USER_ID, user_input, response)
-                interface.print_parker(response)
+                interface.print_parker(response)         # BUG FIX: only speak in voice mode
                 speak(response)
 
     except KeyboardInterrupt:
-        interface.print_system("Parker shutting down...")
+        interface.print_system("Parker shutting down…")
 
     finally:
         session_end(store)
-        interface.print_system("Waiting for background memory writes...")
+        interface.print_system("Waiting for background memory writes…")
         wait_for_background_jobs()
         close_connections()
