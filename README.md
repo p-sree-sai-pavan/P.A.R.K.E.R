@@ -1,109 +1,133 @@
+<div align="center">
+
+<img src="parker_icon.png" width="120" alt="Parker icon" />
+
 # P.A.R.K.E.R.
 
-Persistent AI assistant with a real memory system.
+### Personal AI with persistent memory
 
-Parker is a CLI-first assistant that remembers you across sessions using PostgreSQL, pgvector, and a hierarchical episodic memory tree:
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrated-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
+[![Groq](https://img.shields.io/badge/Groq-Chat_Model-F55036?style=for-the-badge)](https://groq.com)
+[![Ollama](https://img.shields.io/badge/Ollama-Memory_Model-000000?style=for-the-badge)](https://ollama.com)
 
-`chat -> day -> week -> month -> year`
+**Parker is a CLI-first AI assistant that remembers who you are, what you are building, and what you talked about before.**
 
-The current repo is intentionally simple:
+It uses structured memory instead of relying on a single chat window, so context can grow across sessions without collapsing into one long transcript.
 
-- no web UI
-- no GUI app
-- no reminder system
-- no task engine
+[Highlights](#highlights) | [Memory System](#memory-system) | [Architecture](#architecture) | [Quickstart](#quickstart)
 
-The focus is memory, retrieval, and clean terminal chat.
+</div>
 
-## What It Does
+---
 
-- Stores long-lived profile information
-- Stores important facts about you
-- Tracks projects across sessions
-- Stores chat-level summaries for each exchange
-- Rolls chat summaries up into day, week, month, and year summaries
-- Retrieves through the memory tree instead of scanning everything
-- Supports text mode and voice mode in the terminal
+## Highlights
 
-## Current Architecture
+| Capability | What Parker does |
+|---|---|
+| Persistent identity memory | Learns stable details about you through profile memory |
+| Fact memory | Saves important user facts and retrieves them when relevant |
+| Project memory | Tracks active and related projects across multiple sessions |
+| Episodic memory tree | Stores chat summaries and rolls them into day, week, month, and year summaries |
+| Semantic retrieval | Uses pgvector embeddings to find relevant memories, not just keyword matches |
+| Dual-model design | Uses a strong chat model for replies and a smaller memory model for extraction and summarization |
+| Terminal experience | Runs in a Rich-powered CLI with both text and voice interaction |
 
-### Runtime
+## Why Parker
 
-- `main.py`
-  - CLI entry point
-  - terminal UI
-  - session startup and shutdown
-- `graph.py`
-  - LangGraph flow
-  - trigger -> retrieve -> chat -> remember
-- `retrieval.py`
-  - builds memory context for the chat model
-- `database.py`
-  - PostgreSQL store, vector index, and checkpointer setup
+Most assistants only remember the current conversation window.
 
-### Memory Modules
+Parker is built around a memory pipeline:
 
-- `memory/profile.py`
-  - stable identity and preference memory
-- `memory/facts.py`
-  - discrete user facts
-- `memory/projects.py`
-  - multi-session project memory
-- `memory/episodes.py`
-  - chat summary storage and episodic retrieval
-- `memory/rollup/core.py`
-  - rollup orchestration
-- `memory/rollup/summarizers.py`
-  - day, week, month, and year summary generation
-- `memory/utils.py`
-  - shared store helpers
+- each chat turn becomes a searchable summary
+- chat summaries are rolled up into higher-level time summaries
+- retrieval moves through the memory tree instead of blindly scanning everything
+- profile, facts, and projects are injected alongside episodic context
 
-### Models
+That gives Parker a more stable way to answer questions like:
 
-- Chat model
-  - primary user-facing response generation
-- Memory model
-  - trigger routing
-  - memory extraction
-  - episode summarization
-  - rollup summarization
-- Embedding model
-  - semantic retrieval in pgvector
+- What do you know about me?
+- What project was I working on last week?
+- What were we discussing yesterday?
+- What decisions did I make around this project before?
 
-## Memory Flow
+## Memory System
 
-Each successful turn is summarized and stored at the chat level.
+Parker's episodic memory is organized as a time hierarchy:
 
-Over time Parker rolls those summaries upward:
+```text
+chat -> day -> week -> month -> year
+```
 
-- new day -> previous day's chats -> day summary
-- new week -> previous week's days -> week summary
-- new month -> previous month's weeks -> month summary
-- new year -> previous year's months -> year summary
+### How it works
 
-When you ask a memory-related question, Parker searches the memory tree for relevant summaries instead of trying to stuff all past chats into the prompt.
+1. Every successful turn is summarized and saved at the chat level.
+2. Completed time periods are rolled upward into day, week, month, and year summaries.
+3. Retrieval searches the higher levels first and then narrows toward the most relevant lower-level summaries.
 
-## Graph Flow
+### Memory layers
+
+- `profile`
+  - stable identity and preference information
+- `facts`
+  - discrete important facts about the user
+- `projects`
+  - active work, decisions, and related history
+- `episodes`
+  - summary-based conversational memory across time
+
+## Architecture
+
+### Runtime flow
 
 ```text
 START -> trigger -> retrieve -> chat -> remember -> END
 ```
 
-- `trigger`
-  - decides whether retrieval and storage are needed
-- `retrieve`
-  - builds memory context from profile, facts, projects, episodes, and current time
-- `chat`
-  - produces the user-facing answer
-- `remember`
-  - updates profile, facts, and projects in background threads
+### Node roles
 
-## Requirements
+| Node | Purpose |
+|---|---|
+| `trigger` | Decides whether the current message needs retrieval and storage |
+| `retrieve` | Builds context from profile, facts, projects, episodes, and current time |
+| `chat` | Produces the user-facing response |
+| `remember` | Updates profile, facts, and projects after the reply |
 
-- Python 3.11+
-- Docker Desktop
-- Ollama
-- Groq API key if using Groq for the chat model
+### Core files
+
+| File | Responsibility |
+|---|---|
+| `main.py` | CLI runtime, session flow, input/output loop |
+| `graph.py` | LangGraph orchestration |
+| `retrieval.py` | Memory context assembly |
+| `database.py` | PostgreSQL store, vectors, and checkpointer setup |
+| `memory/episodes.py` | Chat summary storage and episodic retrieval |
+| `memory/rollup/core.py` | Rollup scheduling and refresh |
+| `memory/rollup/summarizers.py` | Day, week, month, and year summary generation |
+
+## Model Stack
+
+| Component | Default role |
+|---|---|
+| Chat model | User-facing response generation |
+| Memory model | Trigger routing, extraction, chat summarization, and rollups |
+| Embedding model | Semantic search over stored memory |
+
+By default, the repo is configured around:
+
+- Groq for the main chat model
+- Ollama Qwen for memory work
+- Ollama embeddings for vector search
+
+## Interface
+
+Parker is built as a terminal-native assistant.
+
+- Rich-based terminal UI
+- text mode for quick chat
+- voice mode with speech-to-text
+- spoken replies through local text-to-speech
 
 ## Quickstart
 
@@ -113,30 +137,26 @@ START -> trigger -> retrieve -> chat -> remember -> END
 pip install -r requirements.txt
 ```
 
-### 2. Pull Ollama models
+### 2. Pull the Ollama models
 
 ```bash
 ollama pull qwen2.5:3b
 ollama pull mxbai-embed-large
 ```
 
-### 3. Start the database
+### 3. Start PostgreSQL with pgvector
 
 ```bash
 docker compose up -d
 ```
 
-This starts PostgreSQL with pgvector on port `5442`.
-
-### 4. Configure `.env`
-
-Copy the example file and add your API key if needed:
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Example:
+Add your Groq key if you are using the default chat provider:
 
 ```env
 GROQ_API_KEY=gsk_your_key_here
@@ -148,7 +168,7 @@ GROQ_API_KEY=gsk_your_key_here
 python main.py
 ```
 
-On Windows you can also use:
+On Windows you can also launch:
 
 ```bash
 run_parker.bat
@@ -156,9 +176,7 @@ run_parker.bat
 
 ## Configuration
 
-Settings live in `.env`.
-
-Key variables:
+Important `.env` settings:
 
 - `CHAT_LLM_PROVIDER`
 - `CHAT_LLM_MODEL`
@@ -174,6 +192,14 @@ Key variables:
 - `GROQ_API_KEY`
 
 See [`.env.example`](.env.example) for the full template.
+
+## Example Prompts
+
+- What do you know about me?
+- What are my active projects right now?
+- What were we talking about yesterday?
+- What did I focus on this month?
+- Do you remember anything about my branch or university?
 
 ## Project Layout
 
@@ -208,9 +234,9 @@ Parker/
 
 ## Notes
 
-- The active episodic memory path is summary-based, not exact raw-transcript replay.
-- For the cleanest behavior after large architecture changes, reset the database and start fresh.
-- Voice input and output are still supported in the terminal runtime.
+- The current episodic memory path is summary-based rather than exact raw transcript replay.
+- The memory tree is designed for retrieval quality and long-session scalability.
+- For the cleanest behavior after architecture changes, resetting the database is recommended.
 
 ## License
 
