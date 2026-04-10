@@ -114,14 +114,7 @@ def _extract_and_save(store, user_id: str, messages: list):
 
             # M2 fix: one semantic_search serves both dedup AND created_at lookup
             # No separate full_scan needed — existing_items covers both purposes
-            all_existing = full_scan(store, ns)
-            existing_text = _format_existing_for_prompt(all_existing)
-            
-            existing_items = semantic_search(
-                store, ns,
-                query=conversation[:300],
-                limit=15  # raised from 10 to compensate for no full_scan
-            )
+            existing_items = full_scan(store, ns)
             existing_text = _format_existing_for_prompt(existing_items)
 
             response = memory_llm.invoke([

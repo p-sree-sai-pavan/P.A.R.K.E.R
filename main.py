@@ -194,8 +194,9 @@ Only the session loop is shown — startup/shutdown code is unchanged.
 
             if response != "(API Error - Please retry)":
                 write_chat_turn_async(store, USER_ID, user_input, response)
-                interface.print_parker(response)         # BUG FIX: only speak in voice mode
-                speak(response)
+                interface.print_parker(response)  
+                if mode == "voice":
+                    speak(response)
 
     except KeyboardInterrupt:
         interface.print_system("Parker shutting down…")

@@ -196,8 +196,9 @@ def trigger_node(state: AppState, config: RunnableConfig, store: BaseStore):
 
 # graph.py — flip the default
 RETRIEVAL_SKIP_PATTERNS = [
-    r"^(hi|hey|hello|thanks|ok|okay|sure|got it|bye|cool|nice|great|yes|no|yep|nope)[\s!.]*$",
-    r"^(what time is it|what's \d+\s*[\+\-\*\/])",
+    r"^(hi|hey|hello|thanks|thank you|ok|okay|sure|got it|bye|cool|nice|great|yes|no|yep|nope)[\s!.]*$",
+    r"^(what time is it|what('s| is) \d+\s*[\+\-\*\/])",
+    r"^(good (morning|afternoon|evening))[\s!.]*$",
 ]
 
 def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
@@ -257,7 +258,7 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
 
 
 def remember_node(state, config, store):
-    trigger = state.get("_trigger")
+    trigger = state.get("_trigger") or {}
     if trigger and not trigger.get("needs_storage", True):
         return {}
 
