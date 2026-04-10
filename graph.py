@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import TypedDict, Annotated, Optional
 import operator
 import re
+from datetime import datetime
 
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -157,12 +158,29 @@ def _repair_memory_response(user_message: str, context: dict, draft: str) -> str
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
+# graph.py — trigger_node system prompt
+TRIGGER_SYSTEM_PROMPT = """You are a memory router. Decide if the user message needs retrieval or storage.
+
+needs_storage = True if the message contains ANY of:
+- Personal facts (name, location, university, tools, preferences)
+- Project updates, decisions, bugs fixed, progress made
+- Explicit statements about what the user does, uses, or prefers
+- New tasks, goals, or plans
+
+needs_storage = False ONLY for: pure greetings ("hi", "thanks", "ok"), 
+single-word acks, math questions with no personal context.
+
+When in doubt: needs_storage = True. False negatives destroy memory permanently.
+
+needs_retrieval = True if answering well requires knowing past context.
+needs_retrieval = False ONLY for: standalone questions answerable without history."""
+
 def trigger_node(state: AppState, config: RunnableConfig, store: BaseStore):
     last_msg = _get_content(state["messages"][-1])
 
     try:
         trigger = trigger_llm.invoke([
-            {"role": "system", "content": "You are a memory router for a personal AI assistant. Analyze the user message and decide if memory retrieval or storage is needed."},
+            {"role": "system", "content": TRIGGER_SYSTEM_PROMPT},
             {"role": "user",   "content": last_msg}
         ])
     except Exception as e:
@@ -176,12 +194,24 @@ def trigger_node(state: AppState, config: RunnableConfig, store: BaseStore):
     return {"_trigger": trigger_data}
 
 
+# graph.py — flip the default
+RETRIEVAL_SKIP_PATTERNS = [
+    r"^(hi|hey|hello|thanks|ok|okay|sure|got it|bye|cool|nice|great|yes|no|yep|nope)[\s!.]*$",
+    r"^(what time is it|what's \d+\s*[\+\-\*\/])",
+]
+
 def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
     user_id = config["configurable"]["user_id"]
     message = _get_content(state["messages"][-1])
     trigger = state.get("_trigger")
 
-    if trigger and not trigger.get("needs_retrieval", True):
+    skip = (
+        trigger
+        and not trigger.get("needs_retrieval", True)
+        and any(re.match(p, message.strip(), re.I) for p in RETRIEVAL_SKIP_PATTERNS)
+    )
+
+    if skip:
         print("[Memory] Retrieval skipped (casual chat).")
         context = {
             "profile":           "(Memory lookup skipped)",
@@ -189,12 +219,13 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
             "critical_facts":    "(Memory lookup skipped)",
             "relevant_facts":    "(Memory lookup skipped)",
             "relevant_episodes": "(Memory lookup skipped)",
-            "current_time":      "Now",
+            "current_time":      datetime.now().strftime("%A, %B %d %Y, %I:%M %p"),
         }
     else:
         print("[Memory] Full retrieval running.")
         recent_history = state["messages"][-12:]
-        context        = build_context(store, user_id, message, recent_history=recent_history, llm=memory_llm)
+        context = build_context(store, user_id, message,
+                                recent_history=recent_history, llm=memory_llm)
 
     return {"_context": context}
 
@@ -225,20 +256,22 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     return {"messages": [response]}
 
 
-def remember_node(state: AppState, config: RunnableConfig, store: BaseStore):
-    user_id     = config["configurable"]["user_id"]
-    trigger     = state.get("_trigger")
-
+def remember_node(state, config, store):
+    trigger = state.get("_trigger")
     if trigger and not trigger.get("needs_storage", True):
-        print("\n[Memory] Storage skipped (no new info).")
         return {}
 
-    print("\n[Memory] Storage triggered.")
-    recent = state["messages"][-4:]
-    save_profile(store, user_id, recent)
-    save_facts(store, user_id, recent)
-    save_projects(store, user_id, recent)
-
+    user_id = config.get("configurable", {}).get("user_id", "default_user")
+    messages = state["messages"]
+    current_turn = []
+    for msg in reversed(messages):
+        current_turn.insert(0, msg)
+        if hasattr(msg, "type") and msg.type == "human":
+            break
+    
+    save_profile(store, user_id, current_turn)
+    save_facts(store, user_id, current_turn)
+    save_projects(store, user_id, current_turn)
     return {}
 
 

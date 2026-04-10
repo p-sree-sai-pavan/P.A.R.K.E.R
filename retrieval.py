@@ -67,7 +67,8 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
     )
     archive_items = load_archive_relevant(store, user_id, query=message)
 
-    existing_keys = {item.key for item in relevant_items}
+    critical_keys = {item.key for item in critical_items}
+    existing_keys = {item.key for item in relevant_items} | critical_keys
     for item in archive_items:
         if item.key not in existing_keys:
             relevant_items.append(item)

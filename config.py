@@ -15,6 +15,8 @@ load_dotenv(_env_path)
 # Database Configuration
 # ════════════════════════════════════════════════════════════════════════════════
 
+REMINDER_POLL_INTERVAL = int(os.getenv("REMINDER_POLL_INTERVAL", "30"))
+
 DB_URI = os.getenv(
     "DB_URI",
     "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
@@ -25,6 +27,7 @@ DB_MAX_RETRIES = int(os.getenv("DB_MAX_RETRIES", "3"))
 DB_RETRY_DELAY = float(os.getenv("DB_RETRY_DELAY", "2.0"))
 
 # User / session defaults
+USER_NAME = os.getenv("USER_NAME", "Pavan")
 DEFAULT_USER_ID   = os.getenv("DEFAULT_USER_ID", "u1")
 DEFAULT_THREAD_ID = os.getenv("DEFAULT_THREAD_ID", "thread_u1")
 

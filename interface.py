@@ -216,7 +216,7 @@ def print_error(message: str):
         border_style="err.dim",
         box=box.SIMPLE,
         padding=(0, 2),
-        title=Text(" error ", style="bold err"),
+        title=Text(" error ", style="bold #F87171"),
         title_align="left",
     )
     console.print(Padding(panel, (0, 0, 0, 2)))
@@ -305,7 +305,7 @@ def print_facts_panel(facts: list):
         return
 
     importance_style = {
-        "critical": "bold err",
+        "critical": "bold #F87171",
         "high":     "warn",
         "normal":   "tx",
         "low":      "tx.dim",

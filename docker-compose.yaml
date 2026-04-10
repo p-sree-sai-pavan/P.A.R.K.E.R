@@ -7,3 +7,8 @@ services:
       POSTGRES_DB: postgres
     ports:
       - "5442:5432"
+    volumes:
+      - parker_pgdata:/var/lib/postgresql/data   # ← add this
+
+volumes:
+  parker_pgdata:                                  # ← add this

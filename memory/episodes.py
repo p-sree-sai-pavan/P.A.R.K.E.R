@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from langchain_core.messages import SystemMessage
 
-from memory.utils import format_messages, full_scan, parse_json_object, semantic_search
+from memory.utils import format_messages, full_scan, parse_json_object, semantic_search, start_background_job
 from models import memory_llm
 from prompts.rollup import CHAT_SUMMARY_PROMPT
 
@@ -67,6 +67,11 @@ def write_chat_entry(store, user_id: str, messages: list):
             write_chat_turn(store, user_id, pending_user, content)
             pending_user = None
 
+def write_chat_turn_async(store, user_id, user_input, response):
+    start_background_job(
+        write_chat_turn, store, user_id, user_input, response,
+        name="episode-write"
+    )
 
 def normalize_chat_summaries(store, user_id: str):
     """
@@ -139,6 +144,10 @@ def format_for_prompt(episodes: list) -> str:
         summary = value.get("summary", "")
         decisions = value.get("decisions", [])
         unfinished = value.get("left_unfinished", [])
+        # format_for_prompt — also pull projects_touched and key_topics for rollup levels
+        projects = value.get("projects_touched") or value.get("projects_mentioned", [])
+        topics = value.get("key_topics", [])
+
 
         lines.append(f"[{level} | {date_label}]")
         if summary:
@@ -149,6 +158,10 @@ def format_for_prompt(episodes: list) -> str:
         if unfinished:
             for item in unfinished:
                 lines.append(f"  Left unfinished: {item}")
+        if projects:
+            lines.append(f"  Projects: {', '.join(projects)}")
+        if topics:
+            lines.append(f"  Topics: {', '.join(topics[:5])}")
         lines.append("")
 
     return "\n".join(lines).strip()

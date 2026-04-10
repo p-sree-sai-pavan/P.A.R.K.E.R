@@ -4,13 +4,17 @@ warnings.filterwarnings("ignore", message=".*MemoryTrigger.*")
 import threading
 import builtins
 from datetime import datetime
+from memory.episodes import write_chat_turn_async
 
 _original_print = builtins.print
 
 
 def thread_safe_print(*args, **kwargs):
-    if threading.current_thread().name == "MainThread":
-        _original_print(*args, **kwargs)
+    if threading.current_thread().name != "MainThread":
+        msg = " ".join(str(a) for a in args)
+        if any(tag in msg for tag in ("[Facts]", "[Profile]", "[Projects]", "[Rollup]", "[Episodes]")):
+            return
+    _original_print(*args, **kwargs)
 
 
 builtins.print = thread_safe_print
@@ -189,7 +193,7 @@ Only the session loop is shown — startup/shutdown code is unchanged.
             response = ask(graph, user_input)
 
             if response != "(API Error - Please retry)":
-                write_chat_turn(store, USER_ID, user_input, response)
+                write_chat_turn_async(store, USER_ID, user_input, response)
                 interface.print_parker(response)         # BUG FIX: only speak in voice mode
                 speak(response)
 
@@ -197,7 +201,7 @@ Only the session loop is shown — startup/shutdown code is unchanged.
         interface.print_system("Parker shutting down…")
 
     finally:
-        session_end(store)
         interface.print_system("Waiting for background memory writes…")
         wait_for_background_jobs()
+        session_end(store)
         close_connections()
