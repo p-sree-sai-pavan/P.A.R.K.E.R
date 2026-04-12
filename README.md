@@ -3,28 +3,58 @@
 <img src="parker_icon.png" width="100" alt="Parker icon" />
 
 # P.A.R.K.E.R.
-### Personal AI with Persistent Memory
+### Personal AI with Persistent Memory — JARVIS Edition
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL+pgvector-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
-[![Groq](https://img.shields.io/badge/Groq-Chat_Model-F55036?style=flat-square)](https://groq.com)
-[![Ollama](https://img.shields.io/badge/Ollama-Memory_Model-000000?style=flat-square)](https://ollama.com)
+[![Groq](https://img.shields.io/badge/Groq-Multi--Key-F55036?style=flat-square)](https://groq.com)
+[![Chatterbox](https://img.shields.io/badge/Chatterbox-Voice_Clone-black?style=flat-square)](https://github.com/resemble-ai/chatterbox)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?style=flat-square&logo=telegram)](https://telegram.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-**A CLI-first personal AI assistant that accumulates memory across every session — profile, facts, projects, and a full episodic summary tree from chat → day → week → month → year.**
+**A JARVIS-style personal AI assistant with persistent memory, voice cloning, Telegram access, and multi-key Groq rotation.**
 
-[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory System](#memory-system) · [Configuration](#configuration) · [CLI Reference](#cli-reference)
+[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory System](#memory-system) · [Voice Setup](#voice-setup) · [Telegram](#telegram) · [Configuration](#configuration) · [CLI Reference](#cli-reference)
 
 </div>
 
 ---
 
-## Why Parker
+## What Parker Is
 
-Most AI assistants forget you the moment the window closes. Parker is built around the opposite assumption: every conversation should compound on the last one.
+Most AI assistants forget you the moment the window closes. Parker compounds every conversation — profile, facts, projects, and a full episodic summary tree from chat → day → week → month → year.
 
-It maintains four persistent memory layers — a stable identity profile, discrete facts, active project state, and a time-indexed episodic summary tree. On each turn, relevant context from all layers is retrieved via semantic search and injected into the system prompt. After each turn, new information is extracted and written back. Memory grows continuously across sessions without ever needing to replay raw transcripts.
+It speaks with a JARVIS personality: dry, precise, direct. No filler. No questions at the end of every response. It uses your memory as its own organic knowledge.
+
+---
+
+## What's New
+
+### JARVIS Personality
+Complete rewrite of `prompts/chat.py`. Parker now responds like JARVIS — concise, dry British wit, addresses you as "sir" naturally, never asks "How does that sound?", never says "Certainly!" or "Of course!". Banned phrases list enforced at prompt level.
+
+### Multi-Key Groq Rotation
+Each LLM task gets its own dedicated Groq API key to avoid rate limit conflicts:
+
+| LLM | Key | Task |
+|---|---|---|
+| `chat_llm` | key1 (solo) | Chat responses — heaviest, serial |
+| `rollup_llm` | key2 | Day/week/month/year rollups |
+| `projects_llm` | key2 (shared) | Project extraction — background |
+| `facts_llm` | key3 | Fact extraction — background |
+| `episodes_llm` | key3 (shared) | Chat summary generation |
+| `trigger_llm` | key4 | Trigger classification — serial |
+| `profile_llm` | key4 (shared) | Profile extraction — background |
+
+### Voice Cloning via Chatterbox
+Parker speaks in a cloned voice. Provide any 10–15 second clean reference audio clip and Chatterbox replicates it. Default setup uses a cloned reference voice placed at `reference_audio/reference.wav` in the Chatterbox server directory.
+
+### Auto-Start Services
+`main.py` now automatically starts Ollama and the Chatterbox TTS server on launch, and stops them cleanly on exit. No manual service management needed.
+
+### Telegram Bot
+Access Parker from anywhere via Telegram — mobile data, hostel WiFi, college network. Supports text messages, voice messages (Whisper transcription), and all memory commands.
 
 ---
 
@@ -34,8 +64,10 @@ It maintains four persistent memory layers — a stable identity profile, discre
 
 - Python 3.11+
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Ollama](https://ollama.com) installed and running
-- [Groq API key](https://console.groq.com) (free tier works)
+- [Ollama](https://ollama.com) installed
+- [Groq API keys](https://console.groq.com) — up to 4 accounts recommended
+- [mpv](https://mpv.io) installed and in PATH (for Chatterbox streaming)
+- [Chatterbox TTS Server](https://github.com/mirbehnam/Chatterbox-TTS-Server-windows-easyInstallation) installed separately
 
 ### 1. Clone and install
 
@@ -48,8 +80,8 @@ pip install -r requirements.txt
 ### 2. Pull Ollama models
 
 ```bash
-ollama pull qwen2.5:3b        # memory model — fast local extraction
-ollama pull mxbai-embed-large # embedding model — semantic search
+ollama pull qwen2.5:3b
+ollama pull mxbai-embed-large
 ```
 
 ### 3. Start PostgreSQL
@@ -58,33 +90,52 @@ ollama pull mxbai-embed-large # embedding model — semantic search
 docker compose up -d
 ```
 
-This starts `pgvector/pgvector:pg16` on port 5442. Data persists in a Docker volume by default.
-
 ### 4. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and set your Groq key:
+Edit `.env`:
 
 ```env
-GROQ_API_KEY=gsk_your_key_here
+# Multi-key Groq setup (use same key for all if you only have one account)
+GROQ_API_KEY_1=gsk_key1
+GROQ_API_KEY_2=gsk_key2
+GROQ_API_KEY_3=gsk_key3
+GROQ_API_KEY_4=gsk_key4
+
+# Memory LLM — switch to groq for better extraction accuracy
+MEMORY_LLM_PROVIDER=groq
+MEMORY_LLM_MODEL=llama-3.3-70b-versatile
+
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_ALLOWED_USER=your_telegram_user_id
 ```
 
-All other defaults work out of the box. See [Configuration](#configuration) for the full reference.
+### 5. Set up voice cloning
 
-### 5. Run
+1. Find a clean 10–15 second audio clip (no background music)
+2. Trim it:
+```python
+from pydub import AudioSegment
+audio = AudioSegment.from_wav("source.wav")
+audio[2000:17000].export("reference.wav", format="wav")
+```
+3. Copy to Chatterbox server: `reference_audio/reference.wav`
+
+### 6. Run
 
 ```bash
+# Windows
+run_parker.bat
+
+# or directly
 python main.py
 ```
 
-On Windows:
-
-```bash
-run_parker.bat
-```
+Ollama and Chatterbox start automatically. Docker must be running.
 
 ---
 
@@ -96,54 +147,55 @@ run_parker.bat
 START → trigger → retrieve → chat → remember → END
 ```
 
-Every user message passes through four LangGraph nodes in sequence.
-
 | Node | What it does |
 |---|---|
-| `trigger` | Asks the memory LLM whether the message needs retrieval and/or storage. Casual greetings skip both. |
-| `retrieve` | Runs `build_context()` — assembles profile, facts, projects, and episodic memories via semantic search. |
-| `chat` | Sends the assembled context + conversation history to the chat LLM and produces the reply. |
-| `remember` | Fires background threads to extract and save new profile data, facts, and project updates. |
-
-The trigger gate is the key performance optimization. A message like `"ok thanks"` costs one small LLM call and nothing else. A message like `"what were we working on yesterday"` triggers full retrieval from the episodic tree.
+| `trigger` | `trigger_llm` classifies needs_retrieval + needs_storage. Regex override forces retrieval for memory queries. |
+| `retrieve` | Assembles profile, facts, projects, episodic memories via semantic search. |
+| `chat` | Groq LLaMA 70B generates response with JARVIS personality. Post-processes to strip AI disclaimers. |
+| `remember` | Background threads: save_profile, save_facts, save_projects, write_chat_turn. Never blocks chat. |
 
 ### Dual-model design
 
-Parker uses two LLMs with different roles:
-
 | Role | Default | Why |
 |---|---|---|
-| Chat LLM | Groq LLaMA 3.3 70B | High-quality, fast cloud inference for user-facing responses |
-| Memory LLM | Ollama Qwen2.5:3b | Local, zero-latency extraction for background memory writes |
+| Chat LLM | Groq LLaMA 3.3 70B (key1) | High-quality JARVIS responses |
+| Memory LLMs | Groq LLaMA 3.3 70B (keys 2–4) | Accurate structured extraction |
+| Embeddings | Ollama mxbai-embed-large | Local semantic search |
 
-This means user responses are never blocked by memory writes. All extraction runs in background threads.
+### Service architecture
+
+```
+python main.py
+    ├── auto-starts: ollama serve
+    ├── auto-starts: Chatterbox TTS Server (localhost:8004)
+    ├── connects: PostgreSQL via Docker (localhost:5442)
+    └── on exit: stops Chatterbox + Ollama cleanly
+```
 
 ### Core file map
 
 ```
 parker/
-├── main.py               CLI runtime — session loop, startup/shutdown hooks
-├── graph.py              LangGraph state machine and all four nodes
-├── retrieval.py          Memory context assembly — all four layers + time
-├── database.py           PostgresStore + PostgresSaver with retry logic
-├── config.py             Centralized env-var configuration
-├── models.py             LLM and embedding initialization
-├── interface.py          Rich-based terminal UI components
-├── ears.py               Whisper + Silero VAD — speech to text
-├── mouth.py              pyttsx3 — text to speech (background thread)
+├── main.py                  CLI runtime — auto-starts services, session loop
+├── telegram_interface.py    Telegram bot — text + voice messages
+├── graph.py                 LangGraph state machine — 4 nodes
+├── retrieval.py             Memory context assembly
+├── database.py              PostgresStore + PostgresSaver
+├── config.py                Centralized env-var configuration
+├── models.py                Per-task LLM instances with key rotation
+├── interface.py             Rich terminal UI
+├── ears.py                  Whisper + Silero VAD — speech to text
+├── mouth.py                 Chatterbox voice clone TTS
 ├── memory/
-│   ├── profile.py        Stable identity extraction and storage
-│   ├── facts.py          Discrete fact extraction, importance ranking, archival
-│   ├── projects.py       Project state tracking across sessions
-│   ├── episodes.py       Chat summary generation, episodic retrieval
-│   └── rollup/
-│       ├── core.py       Rollup scheduler — detects crossed time boundaries
-│       ├── summarizers.py Day / week / month / year summary generation
-│       └── bounds.py     Time boundary detection helpers
+│   ├── profile.py           Identity extraction
+│   ├── facts.py             Fact extraction + archival
+│   ├── projects.py          Project state tracking
+│   ├── episodes.py          Chat summary + episodic retrieval
+│   └── rollup/              Day/week/month/year rollup scheduler
 └── prompts/
-    ├── chat.py           System prompt and memory injection template
-    ├── memory.py         Extraction prompts for profile, facts, projects
-    └── rollup.py         Rollup summarization prompts
+    ├── chat.py              JARVIS personality + memory directives
+    ├── memory.py            Extraction prompts
+    └── rollup.py            Rollup summarization prompts
 ```
 
 ---
@@ -152,165 +204,166 @@ parker/
 
 ### Four layers
 
-**Profile** — Stable identity facts that rarely change. Name, university, branch, tools, preferences. Extracted incrementally; new values overwrite old ones by key.
+**Profile** — Stable identity. Name, university, branch, tools, preferences. Single dict, merge-on-update.
 
-**Facts** — Discrete, self-contained facts with importance levels (`critical`, `high`, `normal`, `low`). Critical facts are always injected into every prompt as hard constraints. Normal and low facts are retrieved semantically. Stale facts are archived automatically based on age thresholds.
+**Facts** — Discrete facts with importance tiers (`critical`, `high`, `normal`, `low`). Critical facts injected into every prompt as hard constraints. Stale facts auto-archived.
 
-**Projects** — Multi-session project state. Tracks name, status, stack, open threads, and a running decisions log. Project entries are created on first mention and updated each session. Completed or abandoned projects move to an archive namespace.
+**Projects** — Multi-session project state. Name, status, stack, open threads, decisions log. Completed projects archived automatically.
 
-**Episodes** — Summary-based conversational memory organized as a time hierarchy:
-
+**Episodes** — Summary tree:
 ```
-chat turn  →  day summary  →  week summary  →  month summary  →  year summary
+chat turn → day → week → month → year
 ```
-
-Each level is generated by the memory LLM from the level below it. Retrieval searches top-down: year → month → week → day → chat. This keeps token costs flat regardless of how many sessions have accumulated.
-
-### Retrieval strategy
-
-On each turn that needs retrieval, `build_context()`:
-
-1. Loads the full profile (always — it's small)
-2. Loads all critical facts (always — they are hard constraints)
-3. Runs semantic search over facts, matching against both the user message and active project names
-4. Loads all active projects plus semantically relevant historical projects
-5. Builds an expanded episode query from the current message and recent history
-6. Drills the episode tree from year → chat, filtering each level by relevance to the level above
-7. Injects current datetime for temporal grounding
-
-The assembled context is formatted and injected into the system prompt before the chat LLM is called.
-
-### Rollup scheduling
-
-On session start, `rollup_if_needed()` checks the last session date. If time boundaries (day, week, month, year) have been crossed since the last run, it sequentially generates summaries for each closed period. This keeps the tree up to date even if Parker is not used every day.
-
-On session end, `refresh_active_rollups()` regenerates the current open period summaries from the latest chat data.
+Retrieval drills top-down: year → month → week → day → chat. Temporal shortcuts for "yesterday"/"today" queries bypass semantic search.
 
 ---
 
-## Configuration
+## Voice Setup
 
-All settings are loaded from `.env`. Copy `.env.example` to get started.
+Parker uses [Chatterbox TTS Server](https://github.com/mirbehnam/Chatterbox-TTS-Server-windows-easyInstallation) for voice output with voice cloning.
 
-### Database
+### Install Chatterbox (Windows)
 
-| Variable | Default | Description |
-|---|---|---|
-| `DB_URI` | `postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable` | PostgreSQL connection string |
-| `DB_MAX_RETRIES` | `3` | Connection retry attempts |
-| `DB_RETRY_DELAY` | `2.0` | Base delay between retries (seconds; multiplied by attempt number) |
+```bash
+git clone https://github.com/mirbehnam/Chatterbox-TTS-Server-windows-easyInstallation.git
+cd Chatterbox-TTS-Server-windows-easyInstallation
+.\setup.bat  # choose option 1 for NVIDIA GPU
+```
 
-### Chat LLM
+### Install mpv (required for streaming)
 
-| Variable | Default | Description |
-|---|---|---|
-| `CHAT_LLM_PROVIDER` | `groq` | `groq` or `ollama` |
-| `CHAT_LLM_MODEL` | `llama-3.3-70b-versatile` | Model name for the provider |
-| `CHAT_LLM_TEMPERATURE` | `0.7` | Response creativity |
-| `CHAT_LLM_MAX_TOKENS` | `1024` | Max output tokens |
-| `CHAT_LLM_TIMEOUT` | `60` | Request timeout (seconds) |
+```bash
+winget install shinchiro.mpv
+# then add to PATH: C:\Program Files\MPV Player
+```
 
-### Memory LLM
+### Clone a voice
 
-| Variable | Default | Description |
-|---|---|---|
-| `MEMORY_LLM_PROVIDER` | `ollama` | `ollama` or `groq` |
-| `MEMORY_LLM_MODEL` | `qwen2.5:3b` | Model name for extraction tasks |
-| `MEMORY_LLM_TEMPERATURE` | `0` | Zero — extraction must be deterministic |
-| `MEMORY_LLM_CTX` | `2048` | Context window for the memory model |
+```bash
+# Download reference audio
+pip install yt-dlp
+python -m yt_dlp -x --audio-format wav "YOUTUBE_URL"
 
-### Embeddings
+# Trim to clean 10-15 second clip
+python -c "
+from pydub import AudioSegment
+audio = AudioSegment.from_wav('source.wav')
+audio[2000:17000].export('reference.wav', format='wav')
+"
 
-| Variable | Default | Description |
-|---|---|---|
-| `EMBEDDING_MODEL` | `mxbai-embed-large` | Ollama embedding model |
-| `EMBEDDING_DIMS` | `1024` | Vector dimensions — must match the model |
+# Copy to Chatterbox
+copy reference.wav "Chatterbox-TTS-Server-windows-easyInstallation\reference_audio\reference.wav"
+```
 
-### API keys
+### Test voice
 
-| Variable | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | Yes (if using Groq) | Get from [console.groq.com](https://console.groq.com) |
-
-### Session defaults
-
-| Variable | Default | Description |
-|---|---|---|
-| `DEFAULT_USER_ID` | `u1` | User namespace in the store |
-| `DEFAULT_THREAD_ID` | `thread_u1` | Base thread ID (a timestamp suffix is appended at runtime) |
+```powershell
+Invoke-WebRequest -Method POST -Uri "http://localhost:8004/tts" -ContentType "application/json" -Body '{"text": "Good evening sir.", "language": "en", "voice_mode": "clone", "reference_audio_filename": "reference.wav"}' -OutFile "test.wav"
+```
 
 ---
 
-## CLI Reference
+## Telegram
 
-### Input modes
+Access Parker from your phone anywhere.
 
-| Mode | How to activate |
-|---|---|
-| Text | Default on startup |
-| Voice | Type `v` at the prompt |
+### Setup
 
-Switch back from voice to text by typing `t`.
+1. Open Telegram → `@BotFather` → `/newbot` → copy token
+2. Open Telegram → `@userinfobot` → copy your numeric user ID
+3. Add to `.env`:
+```env
+TELEGRAM_BOT_TOKEN=your_token
+TELEGRAM_ALLOWED_USER=your_numeric_id
+```
+4. Run:
+```bash
+python telegram_interface.py
+```
 
 ### Commands
 
 | Command | What it does |
 |---|---|
-| `/profile` | Displays your stored memory profile |
-| `/clear` | Clears the terminal and reprints the banner |
-| `exit` / `quit` / `bye` | Saves session state, refreshes rollups, shuts down cleanly |
-| `Ctrl+C` | Also triggers clean shutdown |
+| `/start` | Show available commands |
+| `/profile` | Display memory profile |
+| `/facts` | List stored facts by importance |
+| `/projects` | List active projects |
+| Send text | Parker responds |
+| Send voice message | Whisper transcribes → Parker responds |
 
 ---
 
-## Model alternatives
+## Configuration
 
-The default stack is Groq + Ollama. You can swap either component in `.env`.
-
-**Chat model alternatives (Groq):**
+### Multi-key Groq
 
 ```env
-CHAT_LLM_MODEL=llama-3.3-70b-versatile   # default — best quality
-CHAT_LLM_MODEL=mixtral-8x7b-32768        # longer context
-CHAT_LLM_MODEL=gemma2-9b-it              # lighter, faster
+GROQ_API_KEY_1=gsk_...   # chat responses
+GROQ_API_KEY_2=gsk_...   # rollup + projects
+GROQ_API_KEY_3=gsk_...   # facts + episodes
+GROQ_API_KEY_4=gsk_...   # trigger + profile
 ```
 
-**Fully local setup (Ollama for both):**
+If you have one account, set all to the same key. Parker still works — you'll just hit rate limits faster under heavy use.
+
+### Memory LLM provider
 
 ```env
-CHAT_LLM_PROVIDER=ollama
-CHAT_LLM_MODEL=llama3.2:latest
+# Groq (recommended — better extraction accuracy)
+MEMORY_LLM_PROVIDER=groq
+MEMORY_LLM_MODEL=llama-3.3-70b-versatile
+
+# Ollama (local, no rate limits, less accurate)
 MEMORY_LLM_PROVIDER=ollama
 MEMORY_LLM_MODEL=qwen2.5:3b
 ```
 
+### Full configuration reference
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_URI` | `postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable` | PostgreSQL connection |
+| `GROQ_API_KEY_1..4` | — | Per-task Groq keys |
+| `CHAT_LLM_MODEL` | `llama-3.3-70b-versatile` | Chat model |
+| `MEMORY_LLM_PROVIDER` | `ollama` | `groq` or `ollama` |
+| `MEMORY_LLM_MODEL` | `qwen2.5:3b` | Memory extraction model |
+| `EMBEDDING_MODEL` | `mxbai-embed-large` | Ollama embedding model |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
+| `TELEGRAM_ALLOWED_USER` | — | Your Telegram user ID |
+| `DEFAULT_USER_ID` | `u1` | User namespace |
+| `REMINDER_POLL_INTERVAL` | `30` | Scheduler poll interval (seconds) |
+
 ---
 
-## Voice mode
+## CLI Reference
 
-Voice input uses [faster-whisper](https://github.com/guillaumekientz/faster-whisper) (small model, CPU, int8) with [Silero VAD](https://github.com/snakers4/silero-vad) for automatic silence detection. Speech ends automatically after ~1 second of silence. No button to hold.
+### Commands
 
-Voice output uses `pyttsx3` in a background thread. Speech is non-blocking — you can type the next message while Parker is still speaking.
-
-Install the optional VAD dependency:
-
-```bash
-pip install silero-vad
-```
+| Command | What it does |
+|---|---|
+| `v` | Switch to voice input mode |
+| `t` | Switch to text input mode |
+| `/profile` | Show memory profile |
+| `/facts` | Show stored facts by importance tier |
+| `/projects` | Show active projects |
+| `/clear` | Clear screen |
+| `exit` / `quit` / `bye` | Save state and shut down cleanly |
+| `Ctrl+C` | Clean shutdown |
 
 ---
 
-## Database management
+## Database Management
 
-**Reset all memory** (warning: destructive):
+**Reset all memory** (destructive):
 
 ```bash
 docker compose down -v
 docker compose up -d
-python main.py  # runs setup() automatically
+python main.py
 ```
 
-**Inspect stored episodes:**
+**Inspect episodes:**
 
 ```bash
 python debug_db.py
@@ -318,11 +371,13 @@ python debug_db.py
 
 ---
 
-## Project structure notes
+## Project Notes
 
-- Each session gets a unique thread ID (`thread_u1_YYYYMMDD_HHMMSS`). LangGraph checkpointer state is session-scoped. Cross-session memory is handled entirely through the PostgresStore namespaces, not the checkpointer.
-- Memory writes never block the chat response. `save_facts`, `save_profile`, `save_projects`, and `write_chat_turn` all run in tracked background threads. `wait_for_background_jobs()` is called on shutdown to drain in-flight writes before the process exits.
-- The episodic memory path is summary-only. Raw transcripts are not stored. This is intentional — summaries scale to years of usage; raw transcripts do not.
+- Each session gets a unique thread ID. Cross-session memory lives in PostgresStore namespaces, not the LangGraph checkpointer.
+- Memory writes never block chat. All extraction runs in background threads. `wait_for_background_jobs()` drains them on shutdown.
+- Episodes are summary-only. Raw transcripts are never stored.
+- The JARVIS personality is enforced at prompt level with a banned-phrases list and strict length rules.
+- Voice cloning quality depends on reference audio cleanliness — no background music, single speaker, 10–15 seconds minimum.
 
 ---
 
