@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.store.base import BaseStore
 
-from models import chat_llm, memory_llm
+from models import chat_llm, trigger_llm
 from prompts.chat import BASE_INSTRUCTIONS, SYSTEM_PROMPT_TEMPLATE
 from retrieval import build_context
 from memory.facts import save_facts
@@ -33,7 +33,7 @@ class MemoryTrigger(BaseModel):
     )
 
 
-trigger_llm = memory_llm.with_structured_output(MemoryTrigger)
+trigger_llm = trigger_llm.with_structured_output(MemoryTrigger)
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
         print("[Memory] Full retrieval running.")
         recent_history = state["messages"][-12:]
         context = build_context(store, user_id, message,
-                                recent_history=recent_history, llm=memory_llm)
+                                recent_history=recent_history, llm=trigger_llm)
 
     return {"_context": context}
 

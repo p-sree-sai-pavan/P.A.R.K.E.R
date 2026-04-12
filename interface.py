@@ -27,6 +27,38 @@ from rich import box
 
 warnings.filterwarnings("ignore", message=".*Deserializing unregistered type.*")
 
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+def _supports_unicode_output() -> bool:
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
+    return "utf" in encoding or "65001" in encoding
+
+
+_USE_UNICODE = _supports_unicode_output()
+
+
+def _glyph(unicode_text: str, ascii_text: str) -> str:
+    return unicode_text if _USE_UNICODE else ascii_text
+
+
+STATUS_SEP = _glyph("  ·  ", "  |  ")
+STATUS_OK = _glyph("✓ ", "[OK] ")
+STATUS_WARN = _glyph("⚠ ", "[!] ")
+MODE_VOICE = _glyph("🎙", "mic")
+MODE_TEXT = _glyph("⌨", "kbd")
+PLAIN_DASH = _glyph("—", "-")
+PROMPT_ARROW = _glyph("❯", ">")
+BANNER_MEMORY = _glyph("● ", "* ")
+BANNER_STACK = _glyph("◆ ", "+ ")
+BANNER_CLOCK = _glyph("◇ ", "- ")
+
 
 # ════════════════════════════════════════════════════════════════════════════════
 # Theme
@@ -64,12 +96,20 @@ console = Console(theme=PARKER_THEME, highlight=False)
 # Banner
 # ════════════════════════════════════════════════════════════════════════════════
 
-_BANNER_LINES = [
-    (" ▄▄▄·  ▄▄▄· ▄▄▄  ▄ •▄ ▄▄▄ .▄▄▄ .", "pk"),
-    (" █▀▀█ ▐█ ▀█ ▀▄ █·█▌▄▌▪▀▄.▀·▀▄.▀·", "pk.soft"),
-    (" █▄▄█▌▄█▀▀█ ▐▀▀▄ ▐▀▀▄·▐▀▀▪▄▐▀▀▪▄", "tx"),
-    (" ▀▀▀ ·▀▀ ▀▀ ·  · ·▀  ▀▀▀▀ ·▀▀▀▀ ", "tx.dim"),
-]
+if _USE_UNICODE:
+    _BANNER_LINES = [
+        (" ▄▄▄·  ▄▄▄· ▄▄▄  ▄ •▄ ▄▄▄ .▄▄▄ .", "pk"),
+        (" █▀▀█ ▐█ ▀█ ▀▄ █·█▌▄▌▪▀▄.▀·▀▄.▀·", "pk.soft"),
+        (" █▄▄█▌▄█▀▀█ ▐▀▀▄ ▐▀▀▄·▐▀▀▪▄▐▀▀▪▄", "tx"),
+        (" ▀▀▀ ·▀▀ ▀▀ ·  · ·▀  ▀▀▀▀ ·▀▀▀▀ ", "tx.dim"),
+    ]
+else:
+    _BANNER_LINES = [
+        ("  ____   ___   ____  _  _______ ____  ", "pk"),
+        (" |  _ \\ / _ \\ |  _ \\| |/ / ____|  _ \\ ", "pk.soft"),
+        (" | |_) | |_| || |_) |   <|  _| | |_) |", "tx"),
+        (" |____/ \\___/ |____/|_|\\_\\_____|____/ ", "tx.dim"),
+    ]
 
 
 def print_parker_banner():
@@ -84,13 +124,13 @@ def print_parker_banner():
     now = datetime.now().strftime("%a %b %d  %H:%M")
     parts = Text()
     parts.append("  ")
-    parts.append("● ", style="pk")
+    parts.append(BANNER_MEMORY, style="pk")
     parts.append("memory active", style="tx.dim")
     parts.append("    ", style="")
-    parts.append("◆ ", style="ac")
+    parts.append(BANNER_STACK, style="ac")
     parts.append("groq  ollama  pgvector", style="tx.dim")
     parts.append("    ", style="")
-    parts.append("◇ ", style="tx.dim")
+    parts.append(BANNER_CLOCK, style="tx.dim")
     parts.append(now, style="tx.dim")
 
     console.print(parts)
@@ -108,15 +148,15 @@ def print_status_bar(model: str = "", memory: str = "Active", mode: str = "text"
     One-line status bar: model · memory state · input mode.
     Printed once after the banner; refreshed when mode changes.
     """
-    model_short = model.split("/")[-1] if model else "—"
+    model_short = model.split("/")[-1] if model else PLAIN_DASH
 
     bar = Text("  ")
     bar.append("model ", style="tx.dim")
     bar.append(model_short, style="ac")
-    bar.append("  ·  ", style="tx.muted")
+    bar.append(STATUS_SEP, style="tx.muted")
     bar.append("memory ", style="tx.dim")
     bar.append(memory.lower(), style="ok" if memory.lower() == "active" else "warn")
-    bar.append("  ·  ", style="tx.muted")
+    bar.append(STATUS_SEP, style="tx.muted")
     bar.append("mode ", style="tx.dim")
     bar.append(mode, style="pk" if mode == "voice" else "tx")
 
@@ -411,8 +451,8 @@ def get_spinner(message: str = "thinking") -> Status:
 
 def get_user_prompt(mode: str = "text") -> str:
     if mode == "voice":
-        return "\n  [pk]❯[/] [tx.dim]press enter to speak[/]  "
-    return "\n  [pk]❯[/] "
+        return f"\n  [pk]{PROMPT_ARROW}[/] [tx.dim]press enter to speak[/]  "
+    return f"\n  [pk]{PROMPT_ARROW}[/] "
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -439,7 +479,7 @@ def print_session_divider(session_id: str = ""):
 # ════════════════════════════════════════════════════════════════════════════════
 
 def print_mode_switch(new_mode: str):
-    icon = "🎙" if new_mode == "voice" else "⌨"
+    icon = MODE_VOICE if new_mode == "voice" else MODE_TEXT
     line = Text(f"  {icon}  switched to ", style="tx.dim")
     line.append(new_mode, style="pk" if new_mode == "voice" else "tx")
     line.append(" mode", style="tx.dim")
@@ -456,7 +496,7 @@ def print_goodbye():
     console.print()
     msg = Text("  ")
     msg.append("parker", style="pk")
-    msg.append(" going offline — see you soon", style="tx.dim")
+    msg.append(f" going offline {PLAIN_DASH} see you soon", style="tx.dim")
     console.print(msg)
     console.print()
 
@@ -476,17 +516,17 @@ def setup_environment():
     h = Text("  ")
     h.append("welcome to parker", style="bold pk")
     console.print(h)
-    console.print(f"  [tx.dim]first-time setup — three quick steps[/]")
+    console.print(f"  [tx.dim]first-time setup {PLAIN_DASH} three quick steps[/]")
     console.print()
 
     # Step 1
     console.print("  [ac]01[/] [tx.dim]what should parker call you?[/]")
-    name = Prompt.ask("  [pk]❯[/]")
+    name = Prompt.ask(f"  [pk]{PROMPT_ARROW}[/]")
 
     # Step 2
     console.print()
     console.print("  [ac]02[/] [tx.dim]groq api key  ·  get one free at console.groq.com[/]")
-    api_key = Prompt.ask("  [pk]❯[/]", password=True)
+    api_key = Prompt.ask(f"  [pk]{PROMPT_ARROW}[/]", password=True)
 
     # Step 3
     console.print()
@@ -502,7 +542,7 @@ def setup_environment():
     console.print(choices_table)
     console.print()
 
-    choice = Prompt.ask("  [pk]❯[/]", choices=["1", "2", "3"], default="1")
+    choice = Prompt.ask(f"  [pk]{PROMPT_ARROW}[/]", choices=["1", "2", "3"], default="1")
     model_map = {"1": "llama-3.3-70b-versatile", "2": "mixtral-8x7b-32768", "3": "gemma2-9b-it"}
     selected_model = model_map[choice]
 

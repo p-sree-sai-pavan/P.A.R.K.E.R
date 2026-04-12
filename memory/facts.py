@@ -1,7 +1,7 @@
 import time
 from langchain_core.messages import SystemMessage
 
-from models import memory_llm
+from models import facts_llm
 from prompts.memory import FACTS_EXTRACTION_PROMPT
 from memory.utils import (
     format_messages, parse_json_array,
@@ -117,7 +117,7 @@ def _extract_and_save(store, user_id: str, messages: list):
             existing_items = full_scan(store, ns)
             existing_text = _format_existing_for_prompt(existing_items)
 
-            response = memory_llm.invoke([
+            response = facts_llm.invoke([
                 SystemMessage(content=FACTS_EXTRACTION_PROMPT.format(
                     existing_facts=existing_text or "(empty)",
                     conversation=conversation,

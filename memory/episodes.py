@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from langchain_core.messages import SystemMessage
 
 from memory.utils import format_messages, full_scan, parse_json_object, semantic_search, start_background_job
-from models import memory_llm
+from models import episodes_llm
 from prompts.rollup import CHAT_SUMMARY_PROMPT
 
 
@@ -179,7 +179,7 @@ def _build_chat_summary_entry(key: str, date_label: str, *, user_message: str, a
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": assistant_message},
         ])
-        response = memory_llm.invoke([
+        response = episodes_llm.invoke([
             SystemMessage(content=CHAT_SUMMARY_PROMPT.format(conversation=conversation))
         ])
         parsed = parse_json_object(response.content)

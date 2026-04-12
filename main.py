@@ -6,6 +6,7 @@ import builtins
 from datetime import datetime
 from memory.episodes import write_chat_turn_async
 
+
 _original_print = builtins.print
 
 
@@ -43,6 +44,12 @@ USER_ID = DEFAULT_USER_ID
 SESSION_THREAD_ID = f"{DEFAULT_THREAD_ID}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 config = get_config(USER_ID, SESSION_THREAD_ID)
 
+PARKER_INTRO = (
+    "Good evening, Pavan. All systems are online and memory is synchronized. "
+    "I have reviewed your projects and catalogued your pending tasks. "
+    "I trust your time away was productive. Ready on your command."
+)
+
 
 def ask(graph, prompt: str, custom_config=None, show_spinner=True) -> str:
     try:
@@ -75,20 +82,17 @@ def ask(graph, prompt: str, custom_config=None, show_spinner=True) -> str:
 
 def session_start(store):
     interface.print_system("[Startup] Running session start hooks...")
-
     with interface.get_spinner("Running background rollups and maintenance..."):
         normalize_chat_summaries(store, USER_ID)
         rollup_if_needed(store, USER_ID)
         archive_stale_facts(store, USER_ID)
         archive_completed_projects(store, USER_ID)
-
     interface.print_success("Startup hooks complete.")
 
 
 def session_end(store):
     interface.print_system("Refreshing summary tree...")
     refresh_active_rollups(store, USER_ID)
-
     interface.print_system("Saving session state...")
     store.put(("user", USER_ID, "state"), "last_session", {
         "date": datetime.now().strftime("%Y-%m-%d")
@@ -111,20 +115,14 @@ if __name__ == "__main__":
     interface.print_commands_table()
     interface.print_divider()
 
+    # Intro — print and speak
+    interface.print_parker(PARKER_INTRO)
+    speak(PARKER_INTRO)
+
     mode = "text"
-
-    """
-main.py — Parker AI CLI runtime
-Updated to use the improved interface.py rendering.
-Only the session loop is shown — startup/shutdown code is unchanged.
-"""
-
-# ── (after all the existing imports and setup) ─────────────────────────────────
-# Replace the `while True` loop inside `if __name__ == "__main__":` with this:
 
     try:
         while True:
-            # ── Get input ─────────────────────────────────────────────────────
             if mode == "text":
                 user_input = interface.console.input(
                     interface.get_user_prompt("text")
@@ -139,11 +137,10 @@ Only the session loop is shown — startup/shutdown code is unchanged.
                 interface.print_warning("Didn't catch that — try again.")
                 continue
 
-            # ── Commands ──────────────────────────────────────────────────────
             lower = user_input.lower()
 
             if lower in ("quit", "exit", "bye"):
-                speak("Goodbye!")
+                speak("Goodbye, Pavan.")
                 interface.print_goodbye()
                 break
 
@@ -176,7 +173,7 @@ Only the session loop is shown — startup/shutdown code is unchanged.
             if lower == "/facts":
                 from memory.facts import full_scan, NAMESPACE
                 raw = full_scan(store, NAMESPACE(USER_ID))
-                facts_list = [{"key": i.key, "content": i.value.get("content",""), "importance": i.value.get("importance","normal")} for i in raw]
+                facts_list = [{"key": i.key, "content": i.value.get("content", ""), "importance": i.value.get("importance", "normal")} for i in raw]
                 interface.print_facts_panel(facts_list)
                 continue
 
@@ -186,17 +183,15 @@ Only the session loop is shown — startup/shutdown code is unchanged.
                 interface.print_projects_panel(projs)
                 continue
 
-            # ── Echo user message ─────────────────────────────────────────────
             interface.print_user(user_input)
 
-            # ── Generate response ─────────────────────────────────────────────
             response = ask(graph, user_input)
 
             if response != "(API Error - Please retry)":
                 write_chat_turn_async(store, USER_ID, user_input, response)
-                interface.print_parker(response)  
-                if mode == "voice":
-                    speak(response)
+                # Print first, then speak — single TTS request = no gaps
+                interface.print_parker(response)
+                speak(response)
 
     except KeyboardInterrupt:
         interface.print_system("Parker shutting down…")

@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from langchain_core.messages import SystemMessage
 
-from models import memory_llm
+from models import projects_llm
 from prompts.memory import PROJECT_EXTRACTION_PROMPT
 from memory.utils import (
     format_messages, parse_json_array,
@@ -144,7 +144,7 @@ def _extract_and_save(store, user_id: str, messages: list):
             )
             existing_text = _format_existing_for_prompt(existing_items)
 
-            response = memory_llm.invoke([
+            response = projects_llm.invoke([
                 SystemMessage(content=PROJECT_EXTRACTION_PROMPT.format(
                     existing_projects=existing_text or "(empty)",
                     conversation=conversation,

@@ -1,7 +1,7 @@
 import json
 from langchain_core.messages import SystemMessage
 
-from models import memory_llm
+from models import profile_llm
 from prompts.memory import PROFILE_EXTRACTION_PROMPT
 from memory.utils import (
     format_messages,
@@ -38,7 +38,7 @@ def _extract_and_save(store, user_id: str, messages: list):
             existing     = load_profile(store, user_id)
             conversation = format_messages(messages)
 
-            response = memory_llm.invoke([
+            response = profile_llm.invoke([
                 SystemMessage(content=PROFILE_EXTRACTION_PROMPT.format(
                     existing_profile=json.dumps(existing, indent=2) if existing else "(empty)",
                     conversation=conversation,
