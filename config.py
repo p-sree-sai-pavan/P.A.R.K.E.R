@@ -95,6 +95,7 @@ def get_config(user_id: str = None, thread_id: str = None) -> dict:
         }
     }
 
+COMPUTER_USE_ENABLED=True
 
 # Default config instance for convenience
 config = get_config()

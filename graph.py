@@ -1,7 +1,7 @@
 """
 graph.py — LangGraph orchestration for Parker AI
 
-Flow:  START → trigger → retrieve → chat → remember → END
+Flow:  START → trigger → retrieve → chat → [computer?] → remember → END
 """
 from pydantic import BaseModel, Field
 from typing import TypedDict, Annotated, Optional
@@ -20,6 +20,26 @@ from retrieval import build_context
 from memory.facts import save_facts
 from memory.profile import save_profile
 from memory.projects import save_projects
+
+
+# ── Computer use (lazy import — won't crash if libs missing) ──────────────────
+ 
+def _try_computer_use(response_text: str) -> Optional[str]:
+    """
+    Attempt to parse and execute a computer action from Parker's response.
+    Returns result string if action was found and executed, None otherwise.
+    Silently fails if computer libraries aren't installed.
+    """
+    try:
+        from computer.agent import parse_computer_intent, execute_computer_action
+        intent = parse_computer_intent(response_text)
+        if intent:
+            return execute_computer_action(intent)
+    except ImportError:
+        pass
+    except Exception as e:
+        return f"[Computer Use] Error: {e}"
+    return None
 
 
 # ── Trigger schema ─────────────────────────────────────────────────────────────
@@ -74,25 +94,18 @@ _NO_RECORDS_PATTERNS = [
 _MEMORY_QUERY_PATTERNS = [
     r"\bremember\b",
     r"\brecall\b",
-    r"\bbefore\b",
-    r"\bprevious\b",
-    r"\bearlier\b",
-    r"\byesterday\b",
+    r"\bprevious(ly)?\b",
     r"\blast time\b",
-    r"\bagain\b",
-    r"\bchat\b",
-    r"\bconversation\b",
+    r"\byesterday\b",
     r"\bwhat did (i|you|we)\b",
     r"\bwhen did (i|you|we)\b",
-    r"\byou (gave|said|asked|told)\b",
-    r"\bi (asked|said|told)\b",
-    r"\bwe (did|talked|discussed|worked)\b",
-    r"\b(question|questions|answer|answers|message|messages)\b",
-    r"\bcontinue\b",
-    r"\bpick up\b",
+    r"\byou (gave|said|asked|told|suggested|recommended)\b",
+    r"\bi (asked|said|told) you\b",
+    r"\bwe (talked|discussed|worked|decided)\b",
     r"\bleft off\b",
-    r"\blast chat\b",
-    r"\bprevious chat\b",
+    r"\bpick up\b",
+    r"\blast (chat|session|conversation|time)\b",
+    r"\bearlier (today|this week|you said)\b",
 ]
 
 
@@ -158,20 +171,19 @@ def _repair_memory_response(user_message: str, context: dict, draft: str) -> str
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 
-# graph.py — trigger_node system prompt
 TRIGGER_SYSTEM_PROMPT = """You are a memory router. Decide if the user message needs retrieval or storage.
-
+ 
 needs_storage = True if the message contains ANY of:
 - Personal facts (name, location, university, tools, preferences)
 - Project updates, decisions, bugs fixed, progress made
 - Explicit statements about what the user does, uses, or prefers
 - New tasks, goals, or plans
-
+ 
 needs_storage = False ONLY for: pure greetings ("hi", "thanks", "ok"), 
 single-word acks, math questions with no personal context.
-
+ 
 When in doubt: needs_storage = True. False negatives destroy memory permanently.
-
+ 
 needs_retrieval = True if answering well requires knowing past context.
 needs_retrieval = False ONLY for: standalone questions answerable without history."""
 
@@ -179,9 +191,16 @@ def trigger_node(state: AppState, config: RunnableConfig, store: BaseStore):
     last_msg = _get_content(state["messages"][-1])
 
     try:
+        recent = state["messages"][-4:]
+        history_text = "\n".join(
+            f"{'User' if getattr(m,'type','')=='human' else 'Parker'}: {getattr(m,'content',m) if hasattr(m,'content') else m}"
+            for m in recent[:-1]
+        )
+        trigger_input = f"Recent context:\n{history_text}\n\nCurrent message: {last_msg}" if history_text else last_msg
+
         trigger = trigger_llm.invoke([
             {"role": "system", "content": TRIGGER_SYSTEM_PROMPT},
-            {"role": "user",   "content": last_msg}
+            {"role": "user",   "content": trigger_input}
         ])
     except Exception as e:
         print(f"[Trigger Error] {e} - defaulting to True")
@@ -215,11 +234,11 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
     if skip:
         print("[Memory] Retrieval skipped (casual chat).")
         context = {
-            "profile":           "(Memory lookup skipped)",
-            "active_projects":   "(Memory lookup skipped)",
-            "critical_facts":    "(Memory lookup skipped)",
-            "relevant_facts":    "(Memory lookup skipped)",
-            "relevant_episodes": "(Memory lookup skipped)",
+            "profile":           "",
+            "active_projects":   "",
+            "critical_facts":    "",
+            "relevant_facts":    "",
+            "relevant_episodes": "",
             "current_time":      datetime.now().strftime("%A, %B %d %Y, %I:%M %p"),
         }
     else:
@@ -235,27 +254,68 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     context = state.get("_context") or {}
     user_message = _get_content(state["messages"][-1])
 
+    computer_result = state.get("_computer_result")
+    computer_context = ""
+    if computer_result:
+        computer_context = f"\n\n━━━ COMPUTER ACTION RESULT ━━━\n{computer_result}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    def _section(title, content):
+        if not content or content in ("(none)", "(no profile yet)", ""):
+            return ""
+        return f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{content}\n\n"
+
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         base_instructions=BASE_INSTRUCTIONS,
-        profile=context.get("profile", ""),
-        critical_facts=context.get("critical_facts", ""),
-        relevant_facts=context.get("relevant_facts", ""),
-        active_projects=context.get("active_projects", ""),
-        relevant_episodes=context.get("relevant_episodes", ""),
         current_time=context.get("current_time", "Now"),
+        profile=_section("WHO YOU'RE TALKING TO", context.get("profile", "")),
+        critical_facts=_section("HARD CONSTRAINTS", context.get("critical_facts", "")),
+        relevant_facts=_section("RELEVANT FACTS", context.get("relevant_facts", "")),
+        active_projects=_section("ACTIVE PROJECTS", context.get("active_projects", "")),
+        relevant_episodes=_section("PAST CONTEXT", context.get("relevant_episodes", "")),
     )
 
     system_msg = SystemMessage(content=system_prompt)
-    response   = chat_llm.invoke([system_msg] + state["messages"])
 
+    MAX_HISTORY = 20
+    trimmed_messages = state["messages"][-MAX_HISTORY:]
+
+    response = chat_llm.invoke([system_msg] + trimmed_messages)
+ 
     response_text = _get_content(response).strip()
     if _contains_forbidden_memory_disclaimer(response_text) or (
         _is_no_records_reply(response_text) and _has_useful_memory_context(context)
     ):
         response = AIMessage(content=_repair_memory_response(user_message, context, response_text))
+ 
+    return {"messages": [response], "_computer_result": None}  # clear previous result
+ 
+ 
+def computer_node(state: AppState, config: RunnableConfig, store: BaseStore):
+    """
+    Execute computer use action if Parker's response contains one.
+    Injects result back into state for the next chat turn.
+    """
+    last_response = _get_content(state["messages"][-1])
+    result = _try_computer_use(last_response)
+ 
+    if result:
+        print(f"[Computer] Action executed. Result: {result[:80]}...")
+        # Strip the action tag from the visible response
+        from computer.agent import strip_action_tag
+        clean_response = strip_action_tag(last_response)
+ 
+        # Replace last message with cleaned version
+        cleaned_messages = list(state["messages"][:-1]) + [AIMessage(content=clean_response)]
+        return {
+            "messages": [],           # no new messages
+            "_computer_result": result,
+        }
+ 
+    return {"_computer_result": None}
+ 
 
-    return {"messages": [response]}
 
+from memory.episodes import write_chat_turn_async
 
 def remember_node(state, config, store):
     trigger = state.get("_trigger") or {}
@@ -269,11 +329,35 @@ def remember_node(state, config, store):
         current_turn.insert(0, msg)
         if hasattr(msg, "type") and msg.type == "human":
             break
-    
+
     save_profile(store, user_id, current_turn)
     save_facts(store, user_id, current_turn)
     save_projects(store, user_id, current_turn)
+
+    if len(current_turn) >= 2:
+        user_msg = current_turn[0].content if hasattr(current_turn[0], 'content') else ""
+        assistant_msg = current_turn[-1].content if hasattr(current_turn[-1], 'content') else ""
+        write_chat_turn_async(store, user_id, user_msg, assistant_msg)
+
     return {}
+
+
+# ── Routing ────────────────────────────────────────────────────────────────────
+ 
+def _should_use_computer(state: AppState) -> str:
+    """
+    After chat_node: check if Parker's response contains a computer action tag.
+    Routes to computer_node if yes, remember_node if no.
+    """
+    last_response = _get_content(state["messages"][-1])
+    try:
+        from computer.agent import parse_computer_intent
+        if parse_computer_intent(last_response):
+            print("[Computer] Action detected in response — routing to computer_node.")
+            return "computer"
+    except ImportError:
+        pass
+    return "remember"
 
 
 # ── Graph builder ──────────────────────────────────────────────────────────────
@@ -284,12 +368,22 @@ def build_graph(store: BaseStore, checkpointer):
     builder.add_node("trigger",  trigger_node)
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("chat",     chat_node)
+    builder.add_node("computer", computer_node)
     builder.add_node("remember", remember_node)
 
     builder.add_edge(START,      "trigger")
     builder.add_edge("trigger",  "retrieve")
     builder.add_edge("retrieve", "chat")
-    builder.add_edge("chat",     "remember")
+    # After chat: branch to computer if action detected, else remember
+    builder.add_conditional_edges(
+        "chat",
+        _should_use_computer,
+        {
+            "computer": "computer",
+            "remember": "remember",
+        }
+    )
+    builder.add_edge("computer", "chat")
     builder.add_edge("remember", END)
 
     return builder.compile(store=store, checkpointer=checkpointer)
@@ -297,5 +391,6 @@ def build_graph(store: BaseStore, checkpointer):
 
 __all__ = [
     "build_graph", "AppState", "MemoryTrigger",
-    "trigger_llm", "trigger_node", "retrieve_node", "remember_node", "chat_node",
+    "trigger_llm", "trigger_node", "retrieve_node", "remember_node",
+    "chat_node", "computer_node",
 ]

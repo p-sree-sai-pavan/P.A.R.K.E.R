@@ -188,7 +188,6 @@ if __name__ == "__main__":
             response = ask(graph, user_input)
 
             if response != "(API Error - Please retry)":
-                write_chat_turn_async(store, USER_ID, user_input, response)
                 # Print first, then speak — single TTS request = no gaps
                 interface.print_parker(response)
                 speak(response)

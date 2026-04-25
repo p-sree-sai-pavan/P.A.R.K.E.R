@@ -139,8 +139,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = ask(user_input)
 
-    if response and response != "(API Error - Please retry)":
-        write_chat_turn_async(store, USER_ID, user_input, response)
 
     # Telegram has 4096 char limit per message
     if len(response) <= 4096:
@@ -184,9 +182,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"_{user_input}_", parse_mode="Markdown")
 
         response = ask(user_input)
-
-        if response and response != "(API Error - Please retry)":
-            write_chat_turn_async(store, USER_ID, user_input, response)
 
         await update.message.reply_text(response, parse_mode="Markdown")
 
