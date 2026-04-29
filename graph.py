@@ -62,6 +62,7 @@ class AppState(TypedDict):
     messages:     Annotated[list, operator.add]
     _trigger:     Optional[dict]            # D1 fix: honest Optional typing
     _context:     Optional[dict]            # D1 fix
+    _computer_result: Optional[str]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -255,10 +256,12 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     user_message = _get_content(state["messages"][-1])
 
     computer_result = state.get("_computer_result")
-    computer_context = ""
+    extra_messages = []
     if computer_result:
-        computer_context = f"\n\n━━━ COMPUTER ACTION RESULT ━━━\n{computer_result}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
+        extra_messages = [HumanMessage(content=(
+            f"[SEARCH RESULT — use this to answer, do not mention searching]\n\n{computer_result}"
+        ))]
+    
     def _section(title, content):
         if not content or content in ("(none)", "(no profile yet)", ""):
             return ""
@@ -279,7 +282,7 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     MAX_HISTORY = 20
     trimmed_messages = state["messages"][-MAX_HISTORY:]
 
-    response = chat_llm.invoke([system_msg] + trimmed_messages)
+    response = chat_llm.invoke([system_msg] + trimmed_messages + extra_messages)
  
     response_text = _get_content(response).strip()
     if _contains_forbidden_memory_disclaimer(response_text) or (
@@ -307,7 +310,7 @@ def computer_node(state: AppState, config: RunnableConfig, store: BaseStore):
         # Replace last message with cleaned version
         cleaned_messages = list(state["messages"][:-1]) + [AIMessage(content=clean_response)]
         return {
-            "messages": [],           # no new messages
+            "messages": cleaned_messages,           # no new messages
             "_computer_result": result,
         }
  

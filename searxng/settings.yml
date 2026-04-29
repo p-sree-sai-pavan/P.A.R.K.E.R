@@ -1,0 +1,78 @@
+# searxng/settings.yml
+# Place this file at ./searxng/settings.yml relative to docker-compose.yaml
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Parker Search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json                  # ← REQUIRED: enables the JSON API
+
+server:
+  secret_key: "parker-secret-key-change-this-to-anything"
+  limiter: false            # ← disable rate limiting (personal instance)
+  image_proxy: false
+  port: 8080
+  bind_address: "0.0.0.0"
+
+ui:
+  static_use_hash: true
+
+# Engines to query — best mix for general + technical queries
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: w
+    disabled: false
+
+  - name: reddit
+    engine: reddit
+    shortcut: r
+    disabled: false
+
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+  - name: stackoverflow
+    engine: stackoverflow
+    shortcut: so
+    disabled: false
+
+  - name: arxiv
+    engine: arxiv
+    shortcut: ax
+    disabled: false
+
+  - name: google news
+    engine: google_news
+    shortcut: gn
+    disabled: false
+
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false

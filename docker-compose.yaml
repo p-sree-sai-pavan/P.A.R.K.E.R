@@ -8,7 +8,23 @@ services:
     ports:
       - "5442:5432"
     volumes:
-      - parker_pgdata:/var/lib/postgresql/data   # ← add this
+      - parker_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    depends_on:
+      - redis
 
 volumes:
-  parker_pgdata:                                  # ← add this
+  parker_pgdata:

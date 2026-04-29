@@ -166,10 +166,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await voice_file.download_to_drive(tmp_path)
 
         # Lazy load Whisper (same as ears.py)
-        from ears import _load_models, _whisper
+        from ears import _load_models
+        import ears
         _load_models()
 
-        segments, _ = _whisper.transcribe(tmp_path, language="en")
+        segments, _ = ears._whisper.transcribe(tmp_path, language="en")
         user_input = " ".join(seg.text for seg in segments).strip()
 
         os.unlink(tmp_path)

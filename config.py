@@ -41,7 +41,7 @@ CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", "groq")
 CHAT_LLM_MODEL = os.getenv("CHAT_LLM_MODEL", "llama-3.3-70b-versatile")
 CHAT_LLM_TEMPERATURE = float(os.getenv("CHAT_LLM_TEMPERATURE", "0.7"))
 CHAT_LLM_MAX_TOKENS = int(os.getenv("CHAT_LLM_MAX_TOKENS", "1024"))
-CHAT_LLM_TIMEOUT = int(os.getenv("CHAT_LLM_TIMEOUT", "60"))  # seconds
+CHAT_LLM_TIMEOUT = int(os.getenv("CHAT_LLM_TIMEOUT", "60"))
 
 # Memory LLM — Fast local extraction
 MEMORY_LLM_PROVIDER = os.getenv("MEMORY_LLM_PROVIDER", "ollama")
@@ -54,15 +54,19 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "mxbai-embed-large")
 EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# Web Search Configuration
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Self-hosted SearXNG instance (started via docker-compose)
+SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080/search")
+
+# Computer use toggle
+COMPUTER_USE_ENABLED = True
+
 
 # ════════════════════════════════════════════════════════════════════════════════
-# Reminder Configuration
-# ════════════════════════════════════════════════════════════════════════════════
-
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# API Keys (validated on startup)
+# API Keys
 # ════════════════════════════════════════════════════════════════════════════════
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -75,27 +79,22 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 def validate_config():
     """Validate configuration on startup. Returns list of missing items."""
     missing = []
-
     if CHAT_LLM_PROVIDER == "groq" and not GROQ_API_KEY:
         missing.append("GROQ_API_KEY is required when using Groq provider")
-
     return missing
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# LangGraph Config (for export)
+# LangGraph Config
 # ════════════════════════════════════════════════════════════════════════════════
 
 def get_config(user_id: str = None, thread_id: str = None) -> dict:
-    """Get LangGraph config with user and thread IDs."""
     return {
         "configurable": {
             "user_id": user_id or DEFAULT_USER_ID,
             "thread_id": thread_id or DEFAULT_THREAD_ID,
         }
     }
-
-COMPUTER_USE_ENABLED=True
 
 # Default config instance for convenience
 config = get_config()

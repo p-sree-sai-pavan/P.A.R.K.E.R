@@ -59,15 +59,6 @@ def _ollama(model: str = None, temperature: float = None):
         num_ctx=MEMORY_LLM_CTX,
     )
 
-def _make_llm(key: str, **kwargs):
-    """Make LLM based on provider config, fallback to ollama if groq key missing."""
-    if MEMORY_LLM_PROVIDER == "ollama" and key == _K1:
-        # chat always groq
-        pass
-    if not key and MEMORY_LLM_PROVIDER == "ollama":
-        return _ollama(**kwargs)
-    return _groq(key, **kwargs)
-
 
 # ── Chat LLM — key1 solo ───────────────────────────────────────────────────────
 # Heaviest: full memory context + conversation history + long responses

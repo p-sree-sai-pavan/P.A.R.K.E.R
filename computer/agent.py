@@ -2,8 +2,8 @@
 computer/agent.py — Computer use intent parser and action executor for Parker AI
 
 Parker signals computer actions using a structured <computer_action> tag in its response.
-This module parses that tag, routes to browser or desktop, executes, and returns a result
-string that gets injected back into the conversation.
+This module parses that tag, routes to browser, desktop, or web_search, executes,
+and returns a result string that gets injected back into the conversation.
 """
 
 import json
@@ -24,8 +24,10 @@ def parse_computer_intent(response_text: str) -> Optional[dict]:
     Extract a computer action from Parker's response text.
     Returns None if no action is present.
 
-    Expected format in Parker's response:
-        <computer_action>{"mode": "browser", "action": "navigate", "target": "https://google.com"}</computer_action>
+    Supported formats:
+        <computer_action>{"mode": "web_search", "query": "...", "deep": false}</computer_action>
+        <computer_action>{"mode": "browser", "action": "navigate", "target": "https://..."}</computer_action>
+        <computer_action>{"mode": "desktop", "action": "list_windows"}</computer_action>
     """
     match = _ACTION_TAG_PATTERN.search(response_text)
     if not match:
@@ -51,27 +53,59 @@ def execute_computer_action(intent: dict) -> str:
     that Parker will use as context for its follow-up response.
 
     Intent schema:
-        mode:   "browser" | "desktop"
-        action: depends on mode (see below)
-        target: URL, app name, element text, etc.
-        text:   text to type (for type actions)
-        key:    key to press (for key actions)
+        mode:     "web_search" | "browser" | "desktop"
+        --- web_search ---
+        query:    search query string
+        deep:     bool — fetch full page content (default: false)
+        category: "general" | "news" | "science" | "it" | "social media" (default: "general")
+        --- browser ---
+        action:   navigate | get_elements | read_page | click | type | press | search
+        target:   URL, element text, app name, etc.
+        text:     text to type
+        key:      key to press
+        --- desktop ---
+        action:   list_windows | get_tree | click | type | focus | open
+        target:   window/app title
+        text:     text to type or control name
     """
     mode = intent.get("mode", "browser")
-    action = intent.get("action", "")
 
     try:
-        if mode == "browser":
+        if mode == "web_search":
+            return _execute_web_search(intent)
+        elif mode == "browser":
             return _execute_browser_action(intent)
         elif mode == "desktop":
             return _execute_desktop_action(intent)
         else:
             return f"Unknown computer mode: {mode}"
     except ImportError as e:
-        return f"[Computer Use] Required library not installed: {e}. Run: pip install playwright pywinauto && playwright install chromium"
+        return (
+            f"[Computer Use] Required library not installed: {e}. "
+            f"Run: pip install playwright duckduckgo-search && playwright install chromium"
+        )
     except Exception as e:
         return f"[Computer Use] Execution failed: {e}"
 
+
+# ── Web Search ─────────────────────────────────────────────────────────────────
+
+def _execute_web_search(intent: dict) -> str:
+    """Route to SearXNG-backed search layer."""
+    from computer.search import web_search
+
+    query    = intent.get("query", "").strip()
+    deep     = bool(intent.get("deep", False))
+    category = intent.get("category", "general")
+
+    if not query:
+        return "[Search] No query provided."
+
+    print(f"[Search] Query: '{query}' | deep={deep} | category={category}")
+    return web_search(query=query, deep=deep, category=category)
+
+
+# ── Browser ────────────────────────────────────────────────────────────────────
 
 def _execute_browser_action(intent: dict) -> str:
     from computer.browser import (
@@ -120,21 +154,25 @@ def _execute_browser_action(intent: dict) -> str:
         return f"Key press failed: {result.get('error')}"
 
     elif action == "search":
-        # Composite: navigate → type → press Enter
         if target.startswith("http"):
             navigate(target)
         elements = get_interactive_elements()
-        search_inputs = [e for e in elements if e.get("type") in ("search", "text") or "search" in (e.get("name") or "").lower()]
+        search_inputs = [
+            e for e in elements
+            if e.get("type") in ("search", "text") or "search" in (e.get("name") or "").lower()
+        ]
         if search_inputs:
             result = type_text(text=text)
             if result["success"]:
                 press_key("Enter")
                 return f"Searched for '{text}' on {get_current_url()}"
-        return f"Could not find search field on page."
+        return "Could not find search field on page."
 
     else:
         return f"Unknown browser action: {action}"
 
+
+# ── Desktop ────────────────────────────────────────────────────────────────────
 
 def _execute_desktop_action(intent: dict) -> str:
     from computer.desktop import (
@@ -157,10 +195,12 @@ def _execute_desktop_action(intent: dict) -> str:
         controls = get_app_tree(target)
         if not controls:
             return f"No controls found in '{target}'."
-        # Summarise — don't dump all
-        interactive = [c for c in controls if c.get("type") in (
-            "Button", "Edit", "MenuItem", "CheckBox", "RadioButton", "ComboBox", "Hyperlink"
-        ) and c.get("enabled")][:20]
+        interactive = [
+            c for c in controls
+            if c.get("type") in (
+                "Button", "Edit", "MenuItem", "CheckBox", "RadioButton", "ComboBox", "Hyperlink"
+            ) and c.get("enabled")
+        ][:20]
         return f"Controls in '{target}':\n{json.dumps(interactive, indent=2)}"
 
     elif action == "click":
