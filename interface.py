@@ -76,6 +76,7 @@ PARKER_THEME = Theme({
     "ac.dim":      "#8F6125",
     # Neutral text
     "tx":          "#E5E5E5",
+    "tx.bold":     "bold #E5E5E5",
     "tx.dim":      "#737373",
     "tx.muted":    "#404040",
     # Semantic
@@ -154,7 +155,7 @@ def print_parker_banner():
     """Compact, clean banner with a single status line beneath."""
     console.print()
     for line, style in _BANNER_LINES:
-        console.print(f"  [bold {style}]{line}[/]")
+        console.print(f"  [bold][{style}]{line}[/][/]")
 
     console.print()
 
@@ -215,7 +216,7 @@ def print_user(message: str):
     ts = datetime.now().strftime("%H:%M")
 
     header = Text("  ")
-    header.append("you", style="bold tx")
+    header.append("you", style="tx.bold")
     header.append(f"  {ts}", style="tx.muted")
     console.print(header)
 
@@ -307,7 +308,7 @@ def print_error(message: str):
 def print_header(title: str, subtitle: str = ""):
     console.print()
     h = Text("  ")
-    h.append(title, style="bold tx")
+    h.append(title, style="tx.bold")
     if subtitle:
         h.append(f"  {subtitle}", style="tx.dim")
     console.print(h)
@@ -371,7 +372,7 @@ def print_profile_panel(profile: dict):
 
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
-        title=Text(" profile ", style="bold pk"),
+        title=Text(" profile ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,
@@ -420,7 +421,7 @@ def print_facts_panel(facts: list):
 
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
-        title=Text(" facts ", style="bold pk"),
+        title=Text(" facts ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,
@@ -450,7 +451,7 @@ def print_projects_panel(projects: list):
         box=None,
         padding=(0, 3, 0, 0),
     )
-    t.add_column(style="bold tx", min_width=18)
+    t.add_column(style="tx.bold", min_width=18)
     t.add_column(min_width=10)
     t.add_column(style="tx.dim")
 
@@ -466,7 +467,7 @@ def print_projects_panel(projects: list):
 
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
-        title=Text(" projects ", style="bold pk"),
+        title=Text(" projects ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,
@@ -503,7 +504,7 @@ def print_tasks_panel(tasks: list):
         padding=(0, 3, 0, 0),
     )
     t.add_column(width=3, no_wrap=True)
-    t.add_column(style="bold tx", min_width=18)
+    t.add_column(style="tx.bold", min_width=18)
     t.add_column(style="tx")
     t.add_column(style="tx.dim", justify="right")
 
@@ -536,7 +537,7 @@ def print_tasks_panel(tasks: list):
 
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
-        title=Text(" tasks & reminders ", style="bold pk"),
+        title=Text(" tasks & reminders ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,
@@ -567,7 +568,7 @@ def print_patterns_panel(patterns: list):
 
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
-        title=Text(" observed patterns & habits ", style="bold pk"),
+        title=Text(" observed patterns & habits ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,
@@ -659,7 +660,7 @@ def setup_environment():
     console.print()
 
     h = Text("  ")
-    h.append("welcome to parker", style="bold pk")
+    h.append("welcome to parker", style="pk")
     console.print(h)
     console.print(f"  [tx.dim]first-time setup {PLAIN_DASH} three quick steps[/]")
     console.print()
