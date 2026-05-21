@@ -326,6 +326,8 @@ def print_commands_table():
         ("/profile",     "show memory profile"),
         ("/facts",       "list stored facts"),
         ("/projects",    "list active projects"),
+        ("/tasks",       "list pending tasks"),
+        ("/patterns",    "list observed patterns & habits"),
         ("exit",         "save & quit"),
     ]
 
@@ -465,6 +467,107 @@ def print_projects_panel(projects: list):
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
         title=Text(" projects ", style="bold pk"),
+        title_align="left",
+        border_style="border.hi",
+        box=box.SIMPLE,
+        padding=(1, 2),
+    )
+    console.print()
+    console.print(Padding(panel, (0, 0, 0, 2)))
+    console.print()
+
+
+def print_tasks_panel(tasks: list):
+    """Display pending tasks and reminders."""
+    if not tasks:
+        print_system("No active tasks catalogued.")
+        return
+
+    priority_style = {
+        "urgent": "bold #F87171",
+        "high":     "warn",
+        "normal":   "tx",
+        "low":      "tx.dim",
+    }
+    priority_label = {
+        "urgent": "🔴",
+        "high":     "🔶",
+        "normal":   "🔹",
+        "low":      "▫️",
+    }
+
+    t = Table(
+        show_header=False,
+        show_edge=False,
+        box=None,
+        padding=(0, 3, 0, 0),
+    )
+    t.add_column(width=3, no_wrap=True)
+    t.add_column(style="bold tx", min_width=18)
+    t.add_column(style="tx")
+    t.add_column(style="tx.dim", justify="right")
+
+    priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda i: (
+            priority_order.get(i.value.get("priority", "normal"), 2),
+            i.value.get("due") or "9999-12-31"
+        )
+    )
+
+    for item in sorted_tasks:
+        v = item.value
+        pri = v.get("priority", "normal")
+        icon = Text(priority_label.get(pri, "🔹"), style=priority_style.get(pri, "tx"))
+        
+        name_str = item.key.replace("_", " ")
+        content_str = v.get("content", "")
+        
+        due = v.get("due")
+        cond = v.get("condition")
+        due_str = ""
+        if due:
+            due_str = f"due: {due}"
+        if cond and cond != "none":
+            due_str = f"trigger: {cond}" if not due_str else f"{due_str} ({cond})"
+
+        t.add_row(icon, name_str, content_str, due_str)
+
+    panel = Panel(
+        Padding(t, (0, 0, 0, 1)),
+        title=Text(" tasks & reminders ", style="bold pk"),
+        title_align="left",
+        border_style="border.hi",
+        box=box.SIMPLE,
+        padding=(1, 2),
+    )
+    console.print()
+    console.print(Padding(panel, (0, 0, 0, 2)))
+    console.print()
+
+
+def print_patterns_panel(patterns: list):
+    """Display observed behavioral patterns and habits."""
+    if not patterns:
+        print_system("No behavioral patterns observed yet.")
+        return
+
+    t = Table(
+        show_header=False,
+        show_edge=False,
+        box=None,
+        padding=(0, 3, 0, 0),
+    )
+    t.add_column(width=3, no_wrap=True)
+    t.add_column(style="tx")
+
+    for pattern in patterns:
+        t.add_row(Text("▪", style="ac"), Text(pattern))
+
+    panel = Panel(
+        Padding(t, (0, 0, 0, 1)),
+        title=Text(" observed patterns & habits ", style="bold pk"),
         title_align="left",
         border_style="border.hi",
         box=box.SIMPLE,

@@ -13,8 +13,11 @@ _original_print = builtins.print
 def thread_safe_print(*args, **kwargs):
     if threading.current_thread().name != "MainThread":
         msg = " ".join(str(a) for a in args)
-        if any(tag in msg for tag in ("[Facts]", "[Profile]", "[Projects]", "[Rollup]", "[Episodes]")):
-            return
+        msg_lower = msg.lower()
+        has_failure = any(keyword in msg_lower for keyword in ("error", "fail", "warn", "except"))
+        if not has_failure:
+            if any(tag in msg for tag in ("[Facts]", "[Profile]", "[Projects]", "[Rollup]", "[Episodes]")):
+                return
     _original_print(*args, **kwargs)
 
 
@@ -36,19 +39,106 @@ from database import create_store, create_checkpointer, setup_database, close_co
 from memory.rollup import refresh_active_rollups, rollup_if_needed
 from memory.facts import archive_stale_facts
 from memory.projects import archive_completed_projects
-from memory.episodes import normalize_chat_summaries, write_chat_turn
-from memory.utils import wait_for_background_jobs
+from memory.episodes import normalize_chat_summaries, write_chat_turn, NS_CHAT
+from memory.utils import wait_for_background_jobs, full_scan
+from memory.patterns import detect_behavioral_patterns, load_patterns
+from memory.tasks import archive_completed_tasks, load_active_tasks
 
 
 USER_ID = DEFAULT_USER_ID
 SESSION_THREAD_ID = f"{DEFAULT_THREAD_ID}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 config = get_config(USER_ID, SESSION_THREAD_ID)
 
-PARKER_INTRO = (
-    "Good evening, Pavan. All systems are online and memory is synchronized. "
-    "I have reviewed your projects and catalogued your pending tasks. "
-    "I trust your time away was productive. Ready on your command."
-)
+def generate_startup_greeting(store, user_id: str) -> str:
+    """
+    Fetch weather, active projects, unfinished threads from last chat episode, and pending tasks.
+    Run a fast LLM query to produce a 2-sentence JARVIS-style greeting.
+    """
+    try:
+        from computer.apis import get_weather
+        weather_info = get_weather()
+        loc = weather_info.get("location", "Hanamkonda")
+        temp = weather_info.get("temperature")
+        cond = weather_info.get("condition", "")
+        weather_str = f"{temp}°C, {cond} in {loc}" if temp is not None else "Weather data unavailable"
+    except Exception as e:
+        print(f"[Greeting] Weather fetch failed: {e}")
+        weather_str = "Weather data unavailable"
+
+    try:
+        from memory.projects import load_active_projects
+        active_projects = load_active_projects(store, user_id)
+        proj_names = [p.value.get("name", p.key) for p in active_projects]
+        proj_str = ", ".join(proj_names) if proj_names else "none"
+    except Exception as e:
+        print(f"[Greeting] Projects fetch failed: {e}")
+        proj_str = "none"
+
+    try:
+        active_tasks = load_active_tasks(store, user_id)
+        task_descriptions = [f"{t.value.get('content')} ({t.value.get('priority', 'normal')})" for t in active_tasks]
+        tasks_str = "; ".join(task_descriptions[:3]) if task_descriptions else "none"
+    except Exception as e:
+        print(f"[Greeting] Tasks fetch failed: {e}")
+        tasks_str = "none"
+
+    unfinished_str = "none"
+    try:
+        chats = full_scan(store, NS_CHAT(user_id))
+        if chats:
+            chats.sort(key=lambda c: c.key, reverse=True)
+            last_chat = chats[0].value
+            unfinished = last_chat.get("left_unfinished", [])
+            if unfinished:
+                unfinished_str = "; ".join(unfinished)
+    except Exception as e:
+        print(f"[Greeting] Last chat fetch failed: {e}")
+
+    try:
+        patterns = load_patterns(store, user_id)
+        patterns_str = "; ".join(patterns) if patterns else "none"
+    except Exception as e:
+        print(f"[Greeting] Patterns fetch failed: {e}")
+        patterns_str = "none"
+
+    greeting_prompt = f"""You are Parker, a personal AI modeled on JARVIS from Iron Man.
+Generate a dynamic startup greeting for Pavan (always address him as "sir").
+You are welcoming him back and demonstrating proactive awareness of his situation.
+
+CONTEXT:
+- Time of Day: {datetime.now().strftime("%I:%M %p")}
+- Current Date/Weekday: {datetime.now().strftime("%A, %B %d")}
+- Current Weather: {weather_str}
+- Active Projects: {proj_str}
+- Pending Tasks/Reminders: {tasks_str}
+- Unfinished from Last Session: {unfinished_str}
+- Observed Behavior Patterns & Habits: {patterns_str}
+
+RULES:
+1. Speak in your signature style: calm, dry, precise, British butler.
+2. Synthesize this information into a natural, organic greeting of 2 sentences (maximum 3). Do NOT list them mechanically.
+3. Show present, lived awareness: e.g., if there's an unfinished thread, a behavior pattern, or a habit, mention/comment on it organically (e.g. "This is the fourth session this week you've circled back to the memory bug without fixing it, sir.").
+4. Do NOT ask questions at the end. Make it a statement showing readiness.
+5. Do NOT include any markdown, tags, or emojis. Just the greeting text.
+
+Greeting:"""
+
+    try:
+        from models import chat_llm
+        from langchain_core.messages import SystemMessage
+        response = chat_llm.invoke([SystemMessage(content=greeting_prompt)])
+        greeting = response.content.strip()
+        # Clean any quotes or formatting
+        greeting = greeting.replace('"', '').replace("'", "")
+        if greeting:
+            return greeting
+    except Exception as e:
+        print(f"[Greeting] Generation failed: {e}")
+        
+    return (
+        "Good evening, Pavan. All systems are online and memory is synchronized. "
+        "Ready on your command, sir."
+    )
 
 
 def ask(graph, prompt: str, custom_config=None, show_spinner=True) -> str:
@@ -87,6 +177,9 @@ def session_start(store):
         rollup_if_needed(store, USER_ID)
         archive_stale_facts(store, USER_ID)
         archive_completed_projects(store, USER_ID)
+        archive_completed_tasks(store, USER_ID)
+        detect_behavioral_patterns(store, USER_ID)
+        wait_for_background_jobs()
     interface.print_success("Startup hooks complete.")
 
 
@@ -116,8 +209,10 @@ if __name__ == "__main__":
     interface.print_divider()
 
     # Intro — print and speak
-    interface.print_parker(PARKER_INTRO)
-    speak(PARKER_INTRO)
+    with interface.get_spinner("Parker is computing greeting..."):
+        intro = generate_startup_greeting(store, USER_ID)
+    interface.print_parker(intro)
+    speak(intro)
 
     mode = "text"
 
@@ -181,6 +276,17 @@ if __name__ == "__main__":
                 from memory.projects import load_active_projects
                 projs = load_active_projects(store, USER_ID)
                 interface.print_projects_panel(projs)
+                continue
+
+            if lower == "/tasks":
+                raw = load_active_tasks(store, USER_ID)
+                interface.print_tasks_panel(raw)
+                continue
+
+            if lower == "/patterns":
+                from memory.patterns import load_patterns
+                raw = load_patterns(store, USER_ID)
+                interface.print_patterns_panel(raw)
                 continue
 
             interface.print_user(user_input)

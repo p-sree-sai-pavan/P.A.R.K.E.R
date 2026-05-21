@@ -8,6 +8,7 @@ and returns a result string that gets injected back into the conversation.
 
 import json
 import re
+import ast
 from typing import Optional
 
 
@@ -19,30 +20,107 @@ _ACTION_TAG_PATTERN = re.compile(
 )
 
 
+def clean_and_repair_json(json_str: str):
+    """
+    Clean markdown code fences, trailing commas, single quotes, and Python-style booleans.
+    Parses using json.loads first, then falls back to ast.literal_eval.
+    """
+    cleaned = json_str.strip()
+    
+    # Remove markdown code fences if present
+    fence_pattern = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
+    match = fence_pattern.match(cleaned)
+    if match:
+        cleaned = match.group(1).strip()
+    else:
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        if cleaned.endswith("```"):
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+            
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+
+    # Try standard JSON parsing
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Tokenizer to pythonize common JSON differences for literal_eval:
+    # 1. replace true -> True, false -> False, null -> None (outside of quoted strings)
+    try:
+        pattern = re.compile(r'("([^"\\]|\\.)*")|(\'([^\'\\]|\\.)*\')|(\b(true|false|null)\b)', re.DOTALL)
+        
+        def replace(match):
+            val = match.group(5)
+            if val:
+                if val == "true":
+                    return "True"
+                elif val == "false":
+                    return "False"
+                elif val == "null":
+                    return "None"
+            return match.group(0)
+            
+        pythonized = pattern.sub(replace, cleaned)
+        return ast.literal_eval(pythonized)
+    except Exception as e:
+        print(f"[JSON Repair Warning] Failed to repair and parse JSON string: {e}")
+        return None
+
+
+def parse_computer_intents(response_text: str) -> list[dict]:
+    """
+    Extract all computer actions from Parker's response text.
+    Handles multiple <computer_action> tags and lists/dicts inside them.
+    """
+    matches = _ACTION_TAG_PATTERN.findall(response_text)
+    intents = []
+    for raw in matches:
+        parsed = clean_and_repair_json(raw)
+        if parsed:
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict):
+                        intents.append(item)
+            elif isinstance(parsed, dict):
+                intents.append(parsed)
+    return intents
+
+
 def parse_computer_intent(response_text: str) -> Optional[dict]:
     """
-    Extract a computer action from Parker's response text.
-    Returns None if no action is present.
-
-    Supported formats:
-        <computer_action>{"mode": "web_search", "query": "...", "deep": false}</computer_action>
-        <computer_action>{"mode": "browser", "action": "navigate", "target": "https://..."}</computer_action>
-        <computer_action>{"mode": "desktop", "action": "list_windows"}</computer_action>
+    Extract a single (first) computer action from Parker's response text.
+    Kept for backwards compatibility.
     """
-    match = _ACTION_TAG_PATTERN.search(response_text)
-    if not match:
-        return None
-
-    try:
-        intent = json.loads(match.group(1).strip())
-        return intent if isinstance(intent, dict) else None
-    except (json.JSONDecodeError, Exception):
-        return None
+    intents = parse_computer_intents(response_text)
+    return intents[0] if intents else None
 
 
 def strip_action_tag(response_text: str) -> str:
     """Remove the <computer_action> tag from Parker's visible response."""
     return _ACTION_TAG_PATTERN.sub("", response_text).strip()
+
+
+def execute_computer_actions(intents: list[dict]) -> str:
+    """
+    Execute multiple computer actions sequentially and format their combined results.
+    """
+    if not intents:
+        return "[Computer Use] No actions to execute."
+    
+    if len(intents) == 1:
+        return execute_computer_action(intents[0])
+        
+    results = []
+    for i, intent in enumerate(intents, 1):
+        mode = intent.get("mode", "unknown")
+        res = execute_computer_action(intent)
+        results.append(f"--- Action {i} ({mode}) Result ---\n{res}")
+        
+    return "\n\n".join(results)
 
 
 # ── Action executor ────────────────────────────────────────────────────────────

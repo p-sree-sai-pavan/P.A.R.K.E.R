@@ -140,9 +140,15 @@ def _resolve_location(city: str = None) -> dict:
 def get_weather(city: str = None) -> dict:
     """
     Current weather + today's forecast from Open-Meteo.
-    Falls back to wttr.in if Open-Meteo fails.
+    Falls back to wttr.in if Open-Meteo fails or geocoding fails.
     """
-    loc = _resolve_location(city)
+    if city:
+        loc = geocode_city(city)
+        if not loc:
+            return _weather_fallback(city)
+    else:
+        loc = get_my_location()
+
     cache_key = f"weather:{loc['city'].lower()}"
     cached = _get_cache(cache_key)
     if cached:
@@ -197,7 +203,13 @@ def get_weather(city: str = None) -> dict:
 
 def get_air_quality(city: str = None) -> dict:
     """Air quality — PM2.5, PM10, NO2, O3, UV, AQI from Open-Meteo."""
-    loc = _resolve_location(city)
+    if city:
+        loc = geocode_city(city)
+        if not loc:
+            return {"error": f"Could not resolve location: {city}", "location": city}
+    else:
+        loc = get_my_location()
+
     cache_key = f"air:{loc['city'].lower()}"
     cached = _get_cache(cache_key)
     if cached:
@@ -243,7 +255,13 @@ def get_historical_weather(city: str, date: str) -> dict:
     Historical weather for a specific date (YYYY-MM-DD).
     Uses Open-Meteo ERA5 archive — goes back to 1940.
     """
-    loc = _resolve_location(city)
+    if city:
+        loc = geocode_city(city)
+        if not loc:
+            return {"error": f"Could not resolve location: {city}", "location": city}
+    else:
+        loc = get_my_location()
+
     cache_key = f"weather:hist:{loc['city'].lower()}:{date}"
     cached = _get_cache(cache_key)
     if cached:
@@ -276,7 +294,8 @@ def get_historical_weather(city: str, date: str) -> dict:
 def _weather_fallback(city: str) -> dict:
     """wttr.in fast fallback."""
     try:
-        r = requests.get(f"http://wttr.in/{city}?format=j1", timeout=5)
+        url_city = city.replace(" ", "+")
+        r = requests.get(f"http://wttr.in/{url_city}?format=j1", timeout=5)
         if r.status_code == 200:
             d = r.json()
             cc = d["current_condition"][0]

@@ -16,6 +16,8 @@ from memory.projects import (
     format_relevant_for_prompt as format_relevant_projects_for_prompt,
 )
 from memory.episodes import load_relevant_episodes, format_for_prompt as format_episodes
+from memory.tasks import load_relevant_tasks, format_tasks_for_prompt
+from memory.patterns import load_patterns, format_patterns_for_prompt
 
 
 _FOLLOWUP_MEMORY_PATTERNS = [
@@ -79,6 +81,12 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
     episodes = load_relevant_episodes(store, user_id, query=episode_query)
     episodes_text = format_episodes(episodes)
 
+    tasks = load_relevant_tasks(store, user_id, query=message)
+    tasks_text = format_tasks_for_prompt(tasks)
+
+    patterns = load_patterns(store, user_id)
+    patterns_text = format_patterns_for_prompt(patterns)
+
     now = datetime.now()
     current_time = now.strftime("%A, %B %d %Y, %I:%M %p")
 
@@ -88,6 +96,8 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
         "critical_facts": critical_text,
         "relevant_facts": relevant_text,
         "relevant_episodes": episodes_text,
+        "pending_tasks": tasks_text,
+        "observed_patterns": patterns_text,
         "current_time": current_time,
     }
 
@@ -107,7 +117,7 @@ def _build_episode_query(message: str, recent_history: list) -> str:
             continue
         if content == base:
             continue
-        if content.lower() == "i don't have records of that yet, pavan.":
+        if content.lower() in ("i don't have records of that yet, pavan.", "i don't recall that, sir."):
             continue
         parts.append(content)
         if len(parts) >= 4:

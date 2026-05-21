@@ -86,7 +86,8 @@ def _fallback_ddg(query: str) -> list[dict]:
     """
     try:
         from duckduckgo_search import DDGS
-        raw = DDGS().text(query, max_results=MAX_RESULTS, backend="lite")
+        with DDGS() as ddgs:
+            raw = ddgs.text(query, max_results=MAX_RESULTS)
         return [
             {
                 "title":   r.get("title", ""),

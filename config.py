@@ -49,6 +49,10 @@ MEMORY_LLM_MODEL = os.getenv("MEMORY_LLM_MODEL", "qwen2.5:3b")
 MEMORY_LLM_TEMPERATURE = float(os.getenv("MEMORY_LLM_TEMPERATURE", "0"))
 MEMORY_LLM_CTX = int(os.getenv("MEMORY_LLM_CTX", "2048"))
 
+# Fallback LLM — Used when primary rate limits or fails
+FALLBACK_LLM_PROVIDER = os.getenv("FALLBACK_LLM_PROVIDER", "gemini")
+FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemini-2.5-flash")
+
 # Embeddings
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "mxbai-embed-large")
 EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))
@@ -70,6 +74,8 @@ COMPUTER_USE_ENABLED = True
 # ════════════════════════════════════════════════════════════════════════════════
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY_1 = os.getenv("GROQ_API_KEY_1", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -79,8 +85,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 def validate_config():
     """Validate configuration on startup. Returns list of missing items."""
     missing = []
-    if CHAT_LLM_PROVIDER == "groq" and not GROQ_API_KEY:
-        missing.append("GROQ_API_KEY is required when using Groq provider")
+    if CHAT_LLM_PROVIDER == "groq" and not GROQ_API_KEY and not GROQ_API_KEY_1:
+        missing.append("GROQ_API_KEY or GROQ_API_KEY_1 is required when using Groq provider")
+    if (CHAT_LLM_PROVIDER == "gemini" or FALLBACK_LLM_PROVIDER == "gemini") and not GEMINI_API_KEY:
+        missing.append("GEMINI_API_KEY is required when using Gemini provider or fallback")
     return missing
 
 

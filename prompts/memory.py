@@ -61,6 +61,7 @@ RULES:
 3. Prefer "update" over duplicate "add".
 4. Return [] if nothing worth storing.
 5. Pure JSON array only. No markdown.
+6. NEVER extract transient or time-dependent information (such as today's date, current time, last session timestamp, current weather, temp, or transient states) as facts. Facts must represent stable, long-term aspects of Pavan's life, identity, preferences, relationships, or history.
 
 EXISTING FACTS:
 {existing_facts}

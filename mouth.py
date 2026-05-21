@@ -13,9 +13,9 @@ import sounddevice as sd
 # American English males   : am_adam, am_michael
 # British English females  : bf_emma, bf_isabella
 # British English males    : bm_george, bm_lewis
-VOICE    = "am_adam"   # closest to a JARVIS-style male voice
+VOICE    = "bm_george"   # British English male voice matching butler persona
 SPEED    = 1.0
-LANG     = "a"         # 'a' = American English, 'b' = British English
+LANG     = "b"         # 'a' = American English, 'b' = British English
 
 # ── Lazy-load pipeline (first speak() call only) ──────────────────────────────
 _pipeline = None

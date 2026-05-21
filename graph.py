@@ -3,8 +3,8 @@ graph.py — LangGraph orchestration for Parker AI
 
 Flow:  START → trigger → retrieve → chat → [computer?] → remember → END
 """
-from pydantic import BaseModel, Field
-from typing import TypedDict, Annotated, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import TypedDict, Annotated, Optional, Union
 import operator
 import re
 from datetime import datetime
@@ -20,21 +20,22 @@ from retrieval import build_context
 from memory.facts import save_facts
 from memory.profile import save_profile
 from memory.projects import save_projects
+from memory.tasks import save_tasks
 
 
 # ── Computer use (lazy import — won't crash if libs missing) ──────────────────
  
 def _try_computer_use(response_text: str) -> Optional[str]:
     """
-    Attempt to parse and execute a computer action from Parker's response.
-    Returns result string if action was found and executed, None otherwise.
+    Attempt to parse and execute computer actions from Parker's response.
+    Returns result string if action(s) were found and executed, None otherwise.
     Silently fails if computer libraries aren't installed.
     """
     try:
-        from computer.agent import parse_computer_intent, execute_computer_action
-        intent = parse_computer_intent(response_text)
-        if intent:
-            return execute_computer_action(intent)
+        from computer.agent import parse_computer_intents, execute_computer_actions
+        intents = parse_computer_intents(response_text)
+        if intents:
+            return execute_computer_actions(intents)
     except ImportError:
         pass
     except Exception as e:
@@ -45,12 +46,22 @@ def _try_computer_use(response_text: str) -> Optional[str]:
 # ── Trigger schema ─────────────────────────────────────────────────────────────
 
 class MemoryTrigger(BaseModel):
-    needs_retrieval: bool = Field(
+    needs_retrieval: Union[bool, str] = Field(
         description="True if memory retrieval is needed to respond properly."
     )
-    needs_storage: bool = Field(
+    needs_storage: Union[bool, str] = Field(
         description="True if the message contains new facts, tasks, or project updates."
     )
+
+    @field_validator("needs_retrieval", "needs_storage", mode="before")
+    @classmethod
+    def coerce_bool(cls, v):
+        if isinstance(v, str):
+            if v.lower() in ("true", "1", "yes"):
+                return True
+            if v.lower() in ("false", "0", "no"):
+                return False
+        return bool(v)
 
 
 trigger_llm = trigger_llm.with_structured_output(MemoryTrigger)
@@ -87,6 +98,7 @@ _FORBIDDEN_MEMORY_PATTERNS = [
 
 _NO_RECORDS_PATTERNS = [
     r"^i don't have records of that yet, pavan\.$",
+    r"^i don't recall that, sir\.$",
     r"i don't have any records of (our )?previous conversation",
     r"i don't have any records of our previous conversation topics",
     r"memory lookup for past context didn't yield any specific information",
@@ -142,13 +154,13 @@ def _has_useful_memory_context(context: dict) -> bool:
 
 def _repair_memory_response(user_message: str, context: dict, draft: str) -> str:
     if not _has_useful_memory_context(context):
-        return "I don't have records of that yet, Pavan."
+        return "I don't recall that, sir."
 
     repair_prompt = SystemMessage(content=(
         "Rewrite the assistant reply so it fully complies with Parker's memory rules.\n"
         "Use only the supplied context.\n"
         "Never mention being an AI, memory limitations, or session resets.\n"
-        "If the context is insufficient, output exactly: I don't have records of that yet, Pavan."
+        "If the context is insufficient, output exactly: I don't recall that, sir."
     ))
 
     repair_input = HumanMessage(content=(
@@ -164,10 +176,10 @@ def _repair_memory_response(user_message: str, context: dict, draft: str) -> str
         repaired_text = _get_content(repaired).strip()
         if repaired_text and not _contains_forbidden_memory_disclaimer(repaired_text):
             return repaired_text
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Memory Repair Error] {e}")
 
-    return "I don't have records of that yet, Pavan."
+    return "I don't recall that, sir."
 
 
 # ── Nodes ──────────────────────────────────────────────────────────────────────
@@ -261,16 +273,18 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     def _section(title, content):
         if not content or content in ("(none)", "(no profile yet)", ""):
             return ""
-        return f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{content}\n\n"
+        return f"## {title}\n{content}\n\n"
 
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         base_instructions=BASE_INSTRUCTIONS,
         current_time=context.get("current_time", "Now"),
-        profile=_section("WHO YOU'RE TALKING TO", context.get("profile", "")),
+        profile=_section("YOUR PROFILE OF PAVAN", context.get("profile", "")),
         critical_facts=_section("HARD CONSTRAINTS", context.get("critical_facts", "")),
-        relevant_facts=_section("RELEVANT FACTS", context.get("relevant_facts", "")),
-        active_projects=_section("ACTIVE PROJECTS", context.get("active_projects", "")),
-        relevant_episodes=_section("PAST CONTEXT", context.get("relevant_episodes", "")),
+        relevant_facts=_section("THINGS YOU REMEMBER ABOUT PAVAN", context.get("relevant_facts", "")),
+        active_projects=_section("PROJECTS YOU ARE CURRENTLY TRACKING", context.get("active_projects", "")),
+        pending_tasks=_section("YOUR ACTIVE TASK LIST", context.get("pending_tasks", "")),
+        observed_patterns=_section("OBSERVED BEHAVIOR PATTERNS & HABITS", context.get("observed_patterns", "")),
+        relevant_episodes=_section("YOUR RECENT RECOLLECTIONS (CHRONOLOGICAL)\nEach entry below has an exact key (ISO timestamp or date). Use these for any date reference — never guess.", context.get("relevant_episodes", "")),
     )
 
     system_msg = SystemMessage(content=system_prompt)
@@ -308,7 +322,7 @@ def computer_node(state: AppState, config: RunnableConfig, store: BaseStore):
     result = _try_computer_use(last_response)
  
     if result:
-        print(f"[Computer] Action executed. Result: {result[:80]}...")
+        print(f"[Computer] Action(s) executed. Result: {result[:80]}...")
         # Strip the action tag from the visible response
         from computer.agent import strip_action_tag
         clean_response = strip_action_tag(last_response)
@@ -342,6 +356,7 @@ def remember_node(state, config, store):
     save_profile(store, user_id, current_turn)
     save_facts(store, user_id, current_turn)
     save_projects(store, user_id, current_turn)
+    save_tasks(store, user_id, current_turn)
 
     if len(current_turn) >= 2:
         user_msg = current_turn[0].content if hasattr(current_turn[0], 'content') else ""
@@ -355,14 +370,14 @@ def remember_node(state, config, store):
  
 def _should_use_computer(state: AppState) -> str:
     """
-    After chat_node: check if Parker's response contains a computer action tag.
+    After chat_node: check if Parker's response contains any computer action tags.
     Routes to computer_node if yes, remember_node if no.
     """
     last_response = _get_content(state["messages"][-1])
     try:
-        from computer.agent import parse_computer_intent
-        if parse_computer_intent(last_response):
-            print("[Computer] Action detected in response — routing to computer_node.")
+        from computer.agent import parse_computer_intents
+        if parse_computer_intents(last_response):
+            print("[Computer] Action(s) detected in response — routing to computer_node.")
             return "computer"
     except ImportError:
         pass
