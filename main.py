@@ -190,6 +190,7 @@ if __name__ == "__main__":
             if response != "(API Error - Please retry)":
                 # Print first, then speak — single TTS request = no gaps
                 interface.print_parker(response)
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
                 speak(response)
 
     except KeyboardInterrupt:

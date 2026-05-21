@@ -226,11 +226,7 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
     message = _get_content(state["messages"][-1])
     trigger = state.get("_trigger")
 
-    skip = (
-        trigger
-        and not trigger.get("needs_retrieval", True)
-        and any(re.match(p, message.strip(), re.I) for p in RETRIEVAL_SKIP_PATTERNS)
-    )
+    skip = any(re.match(p, message.strip(), re.I) for p in RETRIEVAL_SKIP_PATTERNS)
 
     if skip:
         print("[Memory] Retrieval skipped (casual chat).")
@@ -283,6 +279,16 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
     trimmed_messages = state["messages"][-MAX_HISTORY:]
 
     response = chat_llm.invoke([system_msg] + trimmed_messages + extra_messages)
+
+    try:
+        usage = response.response_metadata.get("token_usage", {})
+        from interface import update_token_usage
+        update_token_usage(
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+        )
+    except Exception:
+        pass
  
     response_text = _get_content(response).strip()
     if _contains_forbidden_memory_disclaimer(response_text) or (

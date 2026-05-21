@@ -7,6 +7,8 @@ import sys
 import json
 import warnings
 from datetime import datetime
+import threading
+import time
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -98,19 +100,55 @@ console = Console(theme=PARKER_THEME, highlight=False)
 
 if _USE_UNICODE:
     _BANNER_LINES = [
-        (" ▄▄▄·  ▄▄▄· ▄▄▄  ▄ •▄ ▄▄▄ .▄▄▄ .", "pk"),
-        (" █▀▀█ ▐█ ▀█ ▀▄ █·█▌▄▌▪▀▄.▀·▀▄.▀·", "pk.soft"),
-        (" █▄▄█▌▄█▀▀█ ▐▀▀▄ ▐▀▀▄·▐▀▀▪▄▐▀▀▪▄", "tx"),
-        (" ▀▀▀ ·▀▀ ▀▀ ·  · ·▀  ▀▀▀▀ ·▀▀▀▀ ", "tx.dim"),
+        ("    ██████╗  █████╗ ██████╗ ██╗  ██╗███████╗██████╗ ", "pk"),
+        ("    ██╔══██╗██╔══██╗██╔══██╗██║ ██╔╝██╔════╝██╔══██╗", "pk.soft"),
+        ("    ██████╔╝███████║██████╔╝█████╔╝ █████╗  ██████╔╝", "tx"),
+        ("    ██╔═══╝ ██╔══██║██╔══██╗██╔═██╗ ██╔══╝  ██╔══██╗", "tx.dim"),
+        ("    ██║     ██║  ██║██║  ██║██║  ██╗███████╗██║  ██║", "tx.dim"),
+        ("    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝", "tx.dim"), 
     ]
 else:
     _BANNER_LINES = [
-        ("  ____   ___   ____  _  _______ ____  ", "pk"),
-        (" |  _ \\ / _ \\ |  _ \\| |/ / ____|  _ \\ ", "pk.soft"),
-        (" | |_) | |_| || |_) |   <|  _| | |_) |", "tx"),
-        (" |____/ \\___/ |____/|_|\\_\\_____|____/ ", "tx.dim"),
+        (" _____        _____  _  ________ _____  ", "pk"),
+        (" |  __ \ /\   |  __ \| |/ /  ____|  __ \ ", "pk.soft"),
+        (" | |__) /  \  | |__) | ' /| |__  | |__) |", "tx"),
+        (" |  ___/ /\ \ |  _  /|  < |  __| |  _  / ", "tx.dim"),
+        (" | |  / ____ \| | \ \| . \| |____| | \ \ ", "tx.dim"),
+        (" |_| /_/    \_\_|  \_\_|\_\______|_|  \_\ ", "tx.dim"),   
     ]
 
+
+_token_lock = threading.Lock()
+_token_state = {
+    "prompt":     0,
+    "completion": 0,
+    "total":      0,
+    "window_start": time.time(),
+    "TPM_LIMIT":  6000,  # free tier llama-3.3-70b
+}
+
+def update_token_usage(prompt_tokens: int, completion_tokens: int):
+    with _token_lock:
+        now = time.time()
+        if now - _token_state["window_start"] > 60:
+            _token_state["prompt"]     = 0
+            _token_state["completion"] = 0
+            _token_state["total"]      = 0
+            _token_state["window_start"] = now
+        _token_state["prompt"]     += prompt_tokens
+        _token_state["completion"] += completion_tokens
+        _token_state["total"]      += prompt_tokens + completion_tokens
+
+def get_token_usage() -> dict:
+    with _token_lock:
+        limit = _token_state["TPM_LIMIT"]
+        used  = _token_state["total"]
+        return {
+            "used":      used,
+            "limit":     limit,
+            "remaining": max(0, limit - used),
+            "pct":       min(100, int(used / limit * 100)),
+        }
 
 def print_parker_banner():
     """Compact, clean banner with a single status line beneath."""
@@ -144,18 +182,22 @@ def print_parker_banner():
 # ════════════════════════════════════════════════════════════════════════════════
 
 def print_status_bar(model: str = "", memory: str = "Active", mode: str = "text"):
-    """
-    One-line status bar: model · memory state · input mode.
-    Printed once after the banner; refreshed when mode changes.
-    """
-    model_short = model.split("/")[-1] if model else PLAIN_DASH
+    usage = get_token_usage()
+    remaining = usage["remaining"]
+    pct       = usage["pct"]
+
+    # Color based on usage
+    token_style = "ok" if pct < 60 else "warn" if pct < 85 else "err"
 
     bar = Text("  ")
     bar.append("model ", style="tx.dim")
-    bar.append(model_short, style="ac")
+    bar.append(model.split("/")[-1] if model else "—", style="ac")
     bar.append(STATUS_SEP, style="tx.muted")
     bar.append("memory ", style="tx.dim")
     bar.append(memory.lower(), style="ok" if memory.lower() == "active" else "warn")
+    bar.append(STATUS_SEP, style="tx.muted")
+    bar.append("tokens ", style="tx.dim")
+    bar.append(f"{remaining:,} left", style=token_style)
     bar.append(STATUS_SEP, style="tx.muted")
     bar.append("mode ", style="tx.dim")
     bar.append(mode, style="pk" if mode == "voice" else "tx")

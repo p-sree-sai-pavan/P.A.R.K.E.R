@@ -71,7 +71,9 @@ def execute_computer_action(intent: dict) -> str:
     mode = intent.get("mode", "browser")
 
     try:
-        if mode == "web_search":
+        if mode == "api":
+            return _execute_api(intent)
+        elif mode == "web_search":
             return _execute_web_search(intent)
         elif mode == "browser":
             return _execute_browser_action(intent)
@@ -87,6 +89,15 @@ def execute_computer_action(intent: dict) -> str:
     except Exception as e:
         return f"[Computer Use] Execution failed: {e}"
 
+
+def _execute_api(intent: dict) -> str:
+    from computer.apis import resolve_intent
+    api_intent = intent.get("intent", "")
+    params     = intent.get("params", {})
+    if not api_intent:
+        return "[API] No intent specified."
+    print(f"[API] Resolving intent: {api_intent} | params: {params}")
+    return resolve_intent(api_intent, params)
 
 # ── Web Search ─────────────────────────────────────────────────────────────────
 

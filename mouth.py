@@ -1,16 +1,42 @@
-# Remove RealtimeTTS imports and replace with:
+# mouth.py — Kokoro TTS (replaces Chatterbox)
+# pip install kokoro>=0.9.4 sounddevice soundfile misaki[en]
+# Windows: also install espeak-ng from https://github.com/espeak-ng/espeak-ng/releases
+
 import re
-import io
 import queue
 import threading
-import requests
+import numpy as np
 import sounddevice as sd
-import soundfile as sf
 
-CHATTERBOX_URL = "http://localhost:8004/tts"
+# ── Voice options (pick one) ───────────────────────────────────────────────────
+# American English females : af_heart, af_bella, af_nicole, af_sarah, af_sky
+# American English males   : am_adam, am_michael
+# British English females  : bf_emma, bf_isabella
+# British English males    : bm_george, bm_lewis
+VOICE    = "am_adam"   # closest to a JARVIS-style male voice
+SPEED    = 1.0
+LANG     = "a"         # 'a' = American English, 'b' = British English
 
+# ── Lazy-load pipeline (first speak() call only) ──────────────────────────────
+_pipeline = None
+_pipeline_lock = threading.Lock()
+
+def _get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        with _pipeline_lock:
+            if _pipeline is None:
+                from kokoro import KPipeline
+                print("[TTS] Loading Kokoro pipeline...")
+                _pipeline = KPipeline(lang_code=LANG)
+                print("[TTS] Kokoro ready.")
+    return _pipeline
+
+
+# ── Queue-based worker (same pattern as before) ───────────────────────────────
 _q    = queue.Queue()
 _stop = threading.Event()
+
 
 def _clean(text: str) -> str:
     text = re.sub(r"```[\s\S]*?```", "", text)
@@ -24,30 +50,22 @@ def _clean(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
+
 def _speak_once(text: str):
     try:
-        response = requests.post(
-            CHATTERBOX_URL,
-            json={
-                "text": text,
-                "language": "en",
-                "voice_mode": "clone",
-                "reference_audio_filename": "reference.wav",
-            },
-            timeout=60,
-        )
-        if response.status_code != 200:
-            print(f"[TTS] Error: {response.status_code}")
-            return
-        audio_bytes = io.BytesIO(response.content)
-        data, samplerate = sf.read(audio_bytes, dtype="float32")
-        if not _stop.is_set():
-            sd.play(data, samplerate)
+        pipeline = _get_pipeline()
+        generator = pipeline(text, voice=VOICE, speed=SPEED)
+
+        for _, _, audio in generator:
+            if _stop.is_set():
+                break
+            # audio is a numpy float32 array at 24000 Hz
+            sd.play(audio, samplerate=24000)
             sd.wait()
-    except requests.exceptions.ConnectionError:
-        print("[TTS] Chatterbox not running.")
+
     except Exception as e:
         print(f"[TTS] Error: {e}")
+
 
 def _tts_worker():
     while True:
@@ -62,8 +80,10 @@ def _tts_worker():
             _stop.clear()
             _speak_once(cleaned)
 
+
 def speak(text: str):
     _q.put(text)
+
 
 def stop_speaking():
     _stop.set()
@@ -73,6 +93,7 @@ def stop_speaking():
         except Exception:
             break
     sd.stop()
+
 
 _t = threading.Thread(target=_tts_worker, daemon=True)
 _t.start()

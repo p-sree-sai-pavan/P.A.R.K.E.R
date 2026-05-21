@@ -84,52 +84,155 @@ def normalize_chat_summaries(store, user_id: str):
 
 
 def load_relevant_episodes(store, user_id: str, query: str) -> list:
-    """
-    Retrieve summary memories by drilling down the tree:
-    year -> month -> week -> day -> chat.
-    """
     try:
+        # 1. Temporal shortcut — "today", "yesterday" → skip tree, go direct
         temporal_hits = _load_temporal_episodes(store, user_id, query)
         if temporal_hits:
             return temporal_hits
 
-        year_hits = semantic_search(store, NS_YEAR(user_id), query=query, limit=4)
-        relevant_years = _extract_keys(year_hits)
+        # 2. Explicit date/month mentioned → dive directly
+        explicit = _resolve_explicit_date(query)
+        if explicit:
+            return _dive(store, user_id, query, **explicit)
 
-        month_candidates = semantic_search(store, NS_MONTH(user_id), query=query, limit=24)
-        month_hits = _filter_months_by_years(month_candidates, relevant_years) if relevant_years else month_candidates
-        relevant_months = _extract_keys(month_hits)
-
-        week_candidates = semantic_search(store, NS_WEEK(user_id), query=query, limit=24)
-        week_hits = _filter_weeks_by_months(week_candidates, relevant_months) if relevant_months else week_candidates
-        relevant_weeks = _extract_keys(week_hits)
-
-        day_candidates = semantic_search(store, NS_DAY(user_id), query=query, limit=24)
-        day_hits = _filter_days_by_weeks(day_candidates, relevant_weeks) if relevant_weeks else day_candidates
-        relevant_days = {item.key for item in day_hits}
-
-        chat_candidates = semantic_search(store, NS_CHAT(user_id), query=query, limit=40)
-        if relevant_days:
-            chat_hits = [
-                item for item in chat_candidates
-                if any(item.key.startswith(day_key) for day_key in relevant_days)
-            ]
-            if not chat_hits:
-                chat_hits = chat_candidates[:6]
-        else:
-            chat_hits = chat_candidates[:6]
-
-        return _merge_episode_hits(
-            chat_hits=chat_hits,
-            day_hits=day_hits,
-            week_hits=week_hits,
-            month_hits=month_hits,
-            year_hits=year_hits,
-        )
+        # 3. Top-down traversal — year → month → week → day → chat
+        return _top_down_search(store, user_id, query)
 
     except Exception as e:
         print(f"[Episodes] load_relevant_episodes failed: {e}")
         return []
+
+
+def _top_down_search(store, user_id: str, query: str) -> list:
+    """
+    Traverse the tree top-down. Only go deeper in branches that are relevant.
+    Stops as soon as it finds enough context — no unnecessary fetching.
+    """
+    # Step 1: search years
+    year_hits = semantic_search(store, NS_YEAR(user_id), query=query, limit=10)
+    if not year_hits:
+        return []
+
+    relevant_years = [y.key for y in year_hits]
+
+    # Step 2: search months, filter to relevant years only
+    all_months = semantic_search(store, NS_MONTH(user_id), query=query, limit=24)
+    month_hits = [m for m in all_months if any(m.key.startswith(y) for y in relevant_years)]
+    if not month_hits:
+        month_hits = all_months[:3]  # fallback
+
+    relevant_months = [m.key for m in month_hits]
+
+    # Step 3: search weeks, filter to relevant months
+    all_weeks = semantic_search(store, NS_WEEK(user_id), query=query, limit=24)
+    week_hits = [w for w in all_weeks if any(_week_in_month(w.key, m) for m in relevant_months)]
+    if not week_hits:
+        week_hits = all_weeks[:3]
+
+    relevant_weeks = [w.key for w in week_hits]
+
+    # Step 4: search days, filter to relevant weeks
+    all_days = semantic_search(store, NS_DAY(user_id), query=query, limit=30)
+    day_hits = [d for d in all_days if any(_day_in_week(d.key, w) for w in relevant_weeks)]
+    if not day_hits:
+        day_hits = all_days[:3]
+
+    relevant_days = [d.key for d in day_hits]
+
+    # Step 5: search chats, filter to relevant days only
+    all_chats = semantic_search(store, NS_CHAT(user_id), query=query, limit=50)
+    chat_hits = [c for c in all_chats if any(c.key.startswith(d) for d in relevant_days)]
+    if not chat_hits:
+        chat_hits = all_chats[:5]
+
+    # Return: one summary per level for context + actual chat entries
+    return _dedupe_items(
+        year_hits[:1] +
+        month_hits[:1] +
+        week_hits[:1] +
+        day_hits[:2] +
+        chat_hits[:10]
+    )
+
+
+def _dive(store, user_id: str, query: str, year=None, month=None, day=None) -> list:
+    """
+    User specified a date/month/year explicitly — dive directly to that level.
+    No semantic search needed at higher levels.
+    """
+    results = []
+
+    if year:
+        item = store.get(NS_YEAR(user_id), year)
+        if item:
+            results.append(item)
+
+    if month:
+        item = store.get(NS_MONTH(user_id), month)
+        if item:
+            results.append(item)
+        # get all days in that month
+        all_days = full_scan(store, NS_DAY(user_id))
+        day_hits = [d for d in all_days if d.key.startswith(month)]
+        day_hits.sort(key=lambda x: x.key)
+        results.extend(day_hits)
+        # get chats for those days
+        all_chats = full_scan(store, NS_CHAT(user_id))
+        for d in day_hits:
+            day_chats = sorted(
+                [c for c in all_chats if c.key.startswith(d.key)],
+                key=lambda x: x.key
+            )
+            results.extend(day_chats[:3])
+
+    if day:
+        item = store.get(NS_DAY(user_id), day)
+        if item:
+            results.append(item)
+        all_chats = full_scan(store, NS_CHAT(user_id))
+        day_chats = sorted(
+            [c for c in all_chats if c.key.startswith(day)],
+            key=lambda x: x.key
+        )
+        results.extend(day_chats)
+
+    return _dedupe_items(results)
+
+
+def _resolve_explicit_date(query: str) -> dict | None:
+    """
+    Detect if user mentioned a specific year, month, or date.
+    Returns dict like {"year": "2026"} or {"month": "2026-04"} or {"day": "2026-04-10"}
+    """
+    import re
+    from datetime import datetime
+
+    text = query.lower()
+
+    # Full date: "april 10", "10th april", "april 10 2026"
+    months_map = {
+        "january": "01", "february": "02", "march": "03", "april": "04",
+        "may": "05", "june": "06", "july": "07", "august": "08",
+        "september": "09", "october": "10", "november": "11", "december": "12"
+    }
+
+    # Check for month name + day number
+    for month_name, month_num in months_map.items():
+        if month_name in text:
+            day_match = re.search(r'\b(\d{1,2})(st|nd|rd|th)?\b', text)
+            year_match = re.search(r'\b(202\d)\b', text)
+            year = year_match.group(1) if year_match else str(datetime.now().year)
+            if day_match:
+                day = day_match.group(1).zfill(2)
+                return {"day": f"{year}-{month_num}-{day}"}
+            return {"month": f"{year}-{month_num}"}
+
+    # Check for just a year
+    year_match = re.search(r'\b(202\d)\b', text)
+    if year_match:
+        return {"year": year_match.group(1)}
+
+    return None
 
 
 def format_for_prompt(episodes: list) -> str:
@@ -144,12 +247,11 @@ def format_for_prompt(episodes: list) -> str:
         summary = value.get("summary", "")
         decisions = value.get("decisions", [])
         unfinished = value.get("left_unfinished", [])
-        # format_for_prompt — also pull projects_touched and key_topics for rollup levels
         projects = value.get("projects_touched") or value.get("projects_mentioned", [])
         topics = value.get("key_topics", [])
 
-
-        lines.append(f"[{level} | {date_label}]")
+        # Show exact key so LLM always knows the precise date
+        lines.append(f"[{level} | {date_label} | key: {episode.key}]")
         if summary:
             lines.append(f"  {summary}")
         if decisions:
@@ -296,14 +398,14 @@ def _resolve_temporal_target(query: str) -> dict | None:
     return {"date": target_date, "time": target_time}
 
 
-def _merge_episode_hits(*, chat_hits: list, day_hits: list, week_hits: list, month_hits: list, year_hits: list) -> list:
+def _merge_episode_hits(*, chat_hits, day_hits, week_hits, month_hits, year_hits):
     results = []
     results.extend(year_hits[:1])
     results.extend(month_hits[:1])
     results.extend(week_hits[:1])
-    results.extend(day_hits[:2])
-    results.extend(chat_hits[:4])
-    return _dedupe_items(results)[:7]
+    results.extend(day_hits[:3])
+    results.extend(chat_hits[:10])
+    return _dedupe_items(results)[:15]
 
 
 def _dedupe_items(items: list) -> list:
