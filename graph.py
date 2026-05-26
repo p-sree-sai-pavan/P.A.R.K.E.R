@@ -16,7 +16,7 @@ from langgraph.store.base import BaseStore
 
 from models import chat_llm, trigger_llm
 from prompts.chat import BASE_INSTRUCTIONS, SYSTEM_PROMPT_TEMPLATE
-from retrieval import build_context
+from retrieval import build_context, build_lightweight_context
 from memory.facts import save_facts
 from memory.profile import save_profile
 from memory.projects import save_projects
@@ -241,15 +241,8 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
     skip = any(re.match(p, message.strip(), re.I) for p in RETRIEVAL_SKIP_PATTERNS)
 
     if skip:
-        print("[Memory] Retrieval skipped (casual chat).")
-        context = {
-            "profile":           "",
-            "active_projects":   "",
-            "critical_facts":    "",
-            "relevant_facts":    "",
-            "relevant_episodes": "",
-            "current_time":      datetime.now().strftime("%A, %B %d %Y, %I:%M %p"),
-        }
+        print("[Memory] Retrieval skipped (casual chat) - running lightweight retrieval.")
+        context = build_lightweight_context(store, user_id)
     else:
         print("[Memory] Full retrieval running.")
         recent_history = state["messages"][-12:]
@@ -285,6 +278,7 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
         pending_tasks=_section("YOUR ACTIVE TASK LIST", context.get("pending_tasks", "")),
         observed_patterns=_section("OBSERVED BEHAVIOR PATTERNS & HABITS", context.get("observed_patterns", "")),
         relevant_episodes=_section("YOUR RECENT RECOLLECTIONS (CHRONOLOGICAL)\nEach entry below has an exact key (ISO timestamp or date). Use these for any date reference — never guess.", context.get("relevant_episodes", "")),
+        telemetry=_section("LIVE ENVIRONMENT TELEMETRY", context.get("telemetry", "")),
     )
 
     system_msg = SystemMessage(content=system_prompt)
@@ -341,10 +335,7 @@ def computer_node(state: AppState, config: RunnableConfig, store: BaseStore):
 from memory.episodes import write_chat_turn_async
 
 def remember_node(state, config, store):
-    trigger = state.get("_trigger") or {}
-    if trigger and not trigger.get("needs_storage", True):
-        return {}
-
+    # Forced storage enabled: remember everything, zero bias
     user_id = config.get("configurable", {}).get("user_id", "default_user")
     messages = state["messages"]
     current_turn = []

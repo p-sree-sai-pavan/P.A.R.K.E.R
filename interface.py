@@ -74,6 +74,7 @@ PARKER_THEME = Theme({
     # Gold / accent
     "ac":          "#D9A05B",
     "ac.dim":      "#8F6125",
+    "ac.bold":     "bold #D9A05B",
     # Neutral text
     "tx":          "#E5E5E5",
     "tx.bold":     "bold #E5E5E5",
@@ -207,54 +208,100 @@ def print_status_bar(model: str = "", memory: str = "Active", mode: str = "text"
     console.print()
 
 
+def print_telemetry_dashboard(telemetry: dict):
+    """
+    Prints a beautiful system status board containing telemetry.
+    """
+    t = Table(
+        show_header=False,
+        show_edge=False,
+        box=None,
+        padding=(0, 2, 0, 0),
+    )
+    t.add_column(style="ac", min_width=15, no_wrap=True)
+    t.add_column(style="tx")
+    
+    # Active Window
+    window = telemetry.get("active_window", "Unknown")
+    t.add_row("focused app", f"[tx.bold]{window}[/]")
+    
+    # Git status
+    git_status = telemetry.get("git_status", "Clean")
+    git_color = "ok" if "clean" in git_status.lower() else "warn" if "not a git" not in git_status.lower() else "tx.dim"
+    
+    # Show first few lines of git status
+    git_lines = git_status.splitlines()
+    if len(git_lines) > 3:
+        git_summary = "\n".join(git_lines[:3]) + "\n..."
+    else:
+        git_summary = git_status
+    t.add_row("workspace git", f"[{git_color}]{git_summary}[/]")
+    
+    # Recent files
+    recent = telemetry.get("recent_files", [])
+    if recent:
+        files_str = "\n".join(f"- {f}" for f in recent[:5])
+        if len(recent) > 5:
+            files_str += "\n..."
+        t.add_row("active files", files_str)
+    else:
+        t.add_row("active files", "[tx.dim]no modifications (last 2h)[/]")
+        
+    panel = Panel(
+        Padding(t, (0, 1, 0, 1)),
+        title="[bold pk] telemetry diagnostics [/]",
+        title_align="left",
+        border_style="border.hi",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print(Padding(panel, (0, 4, 0, 4)))
+    console.print()
+
+
 # ════════════════════════════════════════════════════════════════════════════════
 # Message rendering
 # ════════════════════════════════════════════════════════════════════════════════
 
 def print_user(message: str):
-    """Print the user's message — right-aligned feel with a subtle prefix."""
-    ts = datetime.now().strftime("%H:%M")
-
-    header = Text("  ")
-    header.append("you", style="tx.bold")
-    header.append(f"  {ts}", style="tx.muted")
-    console.print(header)
-
-    # Message body — indent, plain white
-    for line in message.splitlines():
-        console.print(f"  [tx]{line}[/]")
-    console.print()
+    """Print the user's message in a clean, gold-bordered panel."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    from config import USER_NAME
+    
+    panel = Panel(
+        Text(message, style="tx"),
+        border_style="ac.dim",
+        box=box.ROUNDED,
+        padding=(0, 2),
+        title=f"[bold ac] {USER_NAME.lower()} [/]",
+        title_align="right",
+        subtitle=f"[tx.dim] {ts} [/]",
+        subtitle_align="right",
+    )
+    console.print(Padding(panel, (0, 4, 0, 4)))
 
 
 def print_parker(message: str, mem_hint: str = ""):
-    """
-    Print Parker's response.
-
-    mem_hint: optional short string shown in the header, e.g.
-              "↑ profile  facts  2 episodes"
-    """
-    ts = datetime.now().strftime("%H:%M")
-
-    # Header row
-    header = Text("  ")
-    header.append("parker", style="pk")
-    header.append(f"  {ts}", style="tx.muted")
-    if mem_hint:
-        header.append(f"  ·  {mem_hint}", style="tx.dim")
-
-    console.print(header)
-
-    # Left-border accent panel
-    # Render the markdown inside a panel with a left rule to visually anchor it
+    """Print Parker's response inside a beautiful rounded panel."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    
     md = Markdown(message, code_theme="dracula", inline_code_lexer="python")
+    
+    subtitle_str = f"[tx.dim] {ts} [/]"
+    if mem_hint:
+        subtitle_str = f"[tx.dim] {mem_hint} • {ts} [/]"
+        
     panel = Panel(
         md,
-        border_style="pk.dim",
-        box=box.SIMPLE,          # clean — just a top/bottom rule
-        padding=(0, 2),
+        border_style="pk",
+        box=box.ROUNDED,
+        padding=(1, 2),
+        title="[bold pk] parker [/]",
+        title_align="left",
+        subtitle=subtitle_str,
+        subtitle_align="left"
     )
-    console.print(Padding(panel, (0, 0, 0, 2)))  # indent entire block 2 chars
-    console.print()
+    console.print(Padding(panel, (0, 4, 0, 4)))
 
 
 def print_memory_note(note: str):
@@ -297,7 +344,7 @@ def print_error(message: str):
     panel = Panel(
         Text(message, style="err"),
         border_style="err.dim",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(0, 2),
         title=Text(" error ", style="bold #F87171"),
         title_align="left",
@@ -322,14 +369,16 @@ def print_header(title: str, subtitle: str = ""):
 def print_commands_table():
     """Clean two-column command reference."""
     COMMANDS = [
-        ("t / v",        "switch text ↔ voice"),
-        ("/clear",       "clear screen"),
-        ("/profile",     "show memory profile"),
-        ("/facts",       "list stored facts"),
-        ("/projects",    "list active projects"),
-        ("/tasks",       "list pending tasks"),
-        ("/patterns",    "list observed patterns & habits"),
-        ("exit",         "save & quit"),
+        ("t / v",          "switch text ↔ voice"),
+        ("/clear",         "clear screen"),
+        ("/telemetry",     "display active telemetry status"),
+        ("/import <path>", "import data from JSON or TXT file"),
+        ("/profile",       "show memory profile"),
+        ("/facts",         "list stored facts"),
+        ("/projects",      "list active projects"),
+        ("/tasks",         "list pending tasks"),
+        ("/patterns",      "list observed patterns & habits"),
+        ("exit",           "save & quit"),
     ]
 
     t = Table(
@@ -338,7 +387,7 @@ def print_commands_table():
         box=None,
         padding=(0, 3, 0, 0),
     )
-    t.add_column(style="ac", min_width=12, no_wrap=True)
+    t.add_column(style="ac", min_width=18, no_wrap=True)
     t.add_column(style="tx.dim")
 
     for cmd, desc in COMMANDS:
@@ -375,7 +424,7 @@ def print_profile_panel(profile: dict):
         title=Text(" profile ", style="pk"),
         title_align="left",
         border_style="border.hi",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(1, 2),
     )
     console.print()
@@ -424,7 +473,7 @@ def print_facts_panel(facts: list):
         title=Text(" facts ", style="pk"),
         title_align="left",
         border_style="border.hi",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(1, 2),
     )
     console.print()
@@ -470,7 +519,7 @@ def print_projects_panel(projects: list):
         title=Text(" projects ", style="pk"),
         title_align="left",
         border_style="border.hi",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(1, 2),
     )
     console.print()
@@ -540,7 +589,7 @@ def print_tasks_panel(tasks: list):
         title=Text(" tasks & reminders ", style="pk"),
         title_align="left",
         border_style="border.hi",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(1, 2),
     )
     console.print()
@@ -571,7 +620,7 @@ def print_patterns_panel(patterns: list):
         title=Text(" observed patterns & habits ", style="pk"),
         title_align="left",
         border_style="border.hi",
-        box=box.SIMPLE,
+        box=box.ROUNDED,
         padding=(1, 2),
     )
     console.print()
@@ -596,9 +645,19 @@ def get_spinner(message: str = "thinking") -> Status:
 # ════════════════════════════════════════════════════════════════════════════════
 
 def get_user_prompt(mode: str = "text") -> str:
+    now_str = datetime.now().strftime("%H:%M:%S")
+    from config import USER_NAME
+    mode_str = "[bold pk]VOICE[/]" if mode == "voice" else "[bold ac]TEXT[/]"
+    
+    prompt = (
+        f"\n[border]┌───[/] [bold pk]PARKER[/] [border]─[/] [tx.dim]user:[/] [tx.bold]{USER_NAME.lower()}[/] "
+        f"[border]─[/] [tx.dim]mode:[/] {mode_str} [border]─[/] [tx.dim]{now_str}[/]\n"
+    )
     if mode == "voice":
-        return f"\n  [pk]{PROMPT_ARROW}[/] [tx.dim]press enter to speak[/]  "
-    return f"\n  [pk]{PROMPT_ARROW}[/] "
+        prompt += f"[border]└──[/] [pk]🎙 {PROMPT_ARROW}[/] [tx.dim](press Enter to speak, speak to interrupt)[/] "
+    else:
+        prompt += f"[border]└──[/] [ac]⌨ {PROMPT_ARROW}[/] "
+    return prompt
 
 
 # ════════════════════════════════════════════════════════════════════════════════

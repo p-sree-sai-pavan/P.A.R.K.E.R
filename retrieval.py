@@ -18,6 +18,7 @@ from memory.projects import (
 from memory.episodes import load_relevant_episodes, format_for_prompt as format_episodes
 from memory.tasks import load_relevant_tasks, format_tasks_for_prompt
 from memory.patterns import load_patterns, format_patterns_for_prompt
+from computer.telemetry import get_system_telemetry, format_telemetry_for_prompt
 
 
 _FOLLOWUP_MEMORY_PATTERNS = [
@@ -89,6 +90,9 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
 
     now = datetime.now()
     current_time = now.strftime("%A, %B %d %Y, %I:%M %p")
+    
+    telemetry_data = get_system_telemetry()
+    telemetry_text = format_telemetry_for_prompt(telemetry_data)
 
     return {
         "profile": profile_text,
@@ -99,6 +103,48 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
         "pending_tasks": tasks_text,
         "observed_patterns": patterns_text,
         "current_time": current_time,
+        "telemetry": telemetry_text,
+    }
+
+
+def build_lightweight_context(store, user_id: str) -> dict:
+    """
+    Loads profile, critical facts, active projects, active tasks, and patterns 
+    without doing any semantic vector search (avoiding Ollama embedding latency).
+    """
+    profile = load_profile(store, user_id)
+    profile_text = format_profile(profile)
+
+    active_projects = load_active_projects(store, user_id)
+    projects_text = format_active_for_prompt(active_projects)
+
+    critical_items = load_critical_facts(store, user_id)
+    critical_text = format_critical_for_prompt(critical_items)
+
+    patterns = load_patterns(store, user_id)
+    patterns_text = format_patterns_for_prompt(patterns)
+
+    # Directly load active tasks (no semantic matches)
+    from memory.tasks import load_active_tasks
+    tasks = load_active_tasks(store, user_id)
+    tasks_text = format_tasks_for_prompt(tasks)
+
+    telemetry_data = get_system_telemetry()
+    telemetry_text = format_telemetry_for_prompt(telemetry_data)
+
+    now = datetime.now()
+    current_time = now.strftime("%A, %B %d %Y, %I:%M %p")
+
+    return {
+        "profile": profile_text,
+        "active_projects": projects_text,
+        "critical_facts": critical_text,
+        "relevant_facts": "",
+        "relevant_episodes": "",
+        "pending_tasks": tasks_text,
+        "observed_patterns": patterns_text,
+        "current_time": current_time,
+        "telemetry": telemetry_text,
     }
 
 

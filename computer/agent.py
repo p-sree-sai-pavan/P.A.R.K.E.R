@@ -27,6 +27,10 @@ def clean_and_repair_json(json_str: str):
     """
     cleaned = json_str.strip()
     
+    # Strip trailing '>' characters if they exist (e.g. from LLM tag completion error)
+    while cleaned.endswith(">") and not cleaned.startswith("<"):
+        cleaned = cleaned[:-1].strip()
+    
     # Remove markdown code fences if present
     fence_pattern = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
     match = fence_pattern.match(cleaned)
@@ -157,6 +161,14 @@ def execute_computer_action(intent: dict) -> str:
             return _execute_browser_action(intent)
         elif mode == "desktop":
             return _execute_desktop_action(intent)
+        elif mode == "sandbox":
+            return _execute_sandbox_action(intent)
+        elif mode == "canvas":
+            return _execute_canvas_action(intent)
+        elif mode == "taskflow":
+            return _execute_taskflow_action(intent)
+        elif mode == "openclaw":
+            return _execute_openclaw_action(intent)
         else:
             return f"Unknown computer mode: {mode}"
     except ImportError as e:
@@ -166,6 +178,24 @@ def execute_computer_action(intent: dict) -> str:
         )
     except Exception as e:
         return f"[Computer Use] Execution failed: {e}"
+
+def _execute_sandbox_action(intent: dict) -> str:
+    from computer.sandbox import run_sandbox_command, write_sandbox_file, read_sandbox_file, list_sandbox_files
+    action = intent.get("action", "")
+    command = intent.get("command", "")
+    file_path = intent.get("file_path", "")
+    content = intent.get("content", "")
+    
+    if action == "run_command":
+        return run_sandbox_command(command)
+    elif action == "write_file":
+        return write_sandbox_file(file_path, content)
+    elif action == "read_file":
+        return read_sandbox_file(file_path)
+    elif action == "list_files":
+        return list_sandbox_files(file_path or ".")
+    else:
+        return f"Unknown sandbox action: {action}"
 
 
 def _execute_api(intent: dict) -> str:
@@ -318,3 +348,122 @@ def _execute_desktop_action(intent: dict) -> str:
 
     else:
         return f"Unknown desktop action: {action}"
+
+
+def _execute_canvas_action(intent: dict) -> str:
+    from computer.canvas import render_canvas_doc
+    action = intent.get("action", "render")
+    doc_id = intent.get("doc_id", "cv_dashboard")
+    title = intent.get("title", "Dashboard")
+    html = intent.get("html", "<h1>No content</h1>")
+    height = int(intent.get("height", 450))
+    
+    if action == "render":
+        shortcode = render_canvas_doc(doc_id=doc_id, title=title, html_body=html, height=height)
+        return f"[Canvas Rendered] Created document '{doc_id}'. You MUST output the exact shortcode: {shortcode} at the end of your response to open it for the user."
+    else:
+        return f"Unknown canvas action: {action}"
+
+
+def _execute_taskflow_action(intent: dict) -> str:
+    import os
+    from computer import taskflow
+    action = intent.get("action", "run")
+    
+    if action == "run":
+        task_name = intent.get("task_name", "Unnamed taskflow")
+        commands = intent.get("commands", [])
+        cwd = intent.get("cwd", None)
+        
+        if not commands:
+            return "Error: No commands provided to run."
+            
+        res = taskflow.start_taskflow(task_name=task_name, commands=commands, cwd=cwd)
+        if res.get("success"):
+            return f"[TaskFlow Started] Successfully spawned taskflow '{res['flow_id']}' in the background for task: '{task_name}'. Steps: {len(commands)}. Parker will monitor this and notify you via Telegram when complete."
+        else:
+            return f"[TaskFlow Error] Failed to start taskflow: {res.get('error')}"
+            
+    elif action == "list":
+        flows = taskflow.list_taskflows()
+        if not flows:
+            return "No background taskflows have been registered yet."
+            
+        lines = []
+        for f in flows:
+            lines.append(f"- ID: {f['flow_id']} | Task: {f['task_name']} | Status: {f['status']} | Created: {f['created_at']}")
+        return "Tracked TaskFlows:\n" + "\n".join(lines)
+        
+    elif action == "show":
+        flow_id = intent.get("flow_id", "")
+        if not flow_id:
+            return "Error: No flow_id specified."
+            
+        f = taskflow.get_taskflow(flow_id)
+        if not f:
+            return f"Error: Taskflow '{flow_id}' not found."
+            
+        log_content = taskflow.read_taskflow_log(flow_id)
+        
+        steps_summary = []
+        for i, step in enumerate(f.get("steps", [])):
+            steps_summary.append(f"  Step {i+1}: {step['command']} ({step['status']}) [{step.get('duration', 0)}s]")
+            
+        summary = (
+            f"TaskFlow Details:\n"
+            f"ID: {f['flow_id']}\n"
+            f"Task: {f['task_name']}\n"
+            f"Status: {f['status']}\n"
+            f"Created At: {f['created_at']}\n"
+            f"Ended At: {f.get('ended_at', 'Still running')}\n"
+            f"Steps:\n" + "\n".join(steps_summary) + "\n\n"
+            f"--- LOGS ---\n"
+            f"{log_content}"
+        )
+        return summary
+        
+    else:
+        return f"Unknown taskflow action: {action}"
+
+
+def _execute_openclaw_action(intent: dict) -> str:
+    import os
+    import subprocess
+    action = intent.get("action", "")
+    command = intent.get("command", "")
+    
+    if action == "cmd":
+        if not command:
+            return "Error: No OpenClaw command specified."
+            
+        if "gateway run" in command:
+            return "Error: The gateway daemon is already running under system supervision."
+            
+        try:
+            cli_args = ["node", "gateway/openclaw.mjs", "--dev"] + command.split()
+            print(f"[OpenClaw CLI] Executing: {' '.join(cli_args)}")
+            
+            res = subprocess.run(
+                cli_args,
+                cwd=os.path.abspath("."),
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            output = ""
+            if res.stdout:
+                output += f"--- STDOUT ---\n{res.stdout}\n"
+            if res.stderr:
+                output += f"--- STDERR ---\n{res.stderr}\n"
+                
+            if not output:
+                output = "Command completed with no output."
+                
+            return f"OpenClaw command finished (exit code: {res.returncode}).\n{output}"
+        except subprocess.TimeoutExpired:
+            return "Error: OpenClaw command execution timed out (limit: 30s)."
+        except Exception as e:
+            return f"Error executing OpenClaw command: {e}"
+    else:
+        return f"Unknown openclaw action: {action}"

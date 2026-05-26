@@ -1,0 +1,18 @@
+{
+  "id": "discord",
+  "activation": {
+    "onStartup": false
+  },
+  "channels": ["discord"],
+  "contracts": {
+    "meetingNotesSourceProviders": ["discord-voice"]
+  },
+  "channelEnvVars": {
+    "discord": ["DISCORD_BOT_TOKEN"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

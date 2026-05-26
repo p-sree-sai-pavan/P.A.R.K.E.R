@@ -1,0 +1,30 @@
+{
+  "flow_id": "tf_win_no_redirect",
+  "task_name": "Windows No Redirect Flow",
+  "status": "running",
+  "cwd": "",
+  "created_at": "2026-05-26 14:22:13",
+  "commands": [
+    "echo 'Running no redirect taskflow step'",
+    "powershell -Command \"Start-Sleep -Seconds 3\"",
+    "echo 'No redirect complete!'"
+  ],
+  "current_step_index": 0,
+  "steps": [
+    {
+      "command": "echo",
+      "status": "pending",
+      "duration": 0.0
+    },
+    {
+      "command": "echo",
+      "status": "pending",
+      "duration": 0.0
+    },
+    {
+      "command": "echo",
+      "status": "pending",
+      "duration": 0.0
+    }
+  ]
+}

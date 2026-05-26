@@ -56,12 +56,20 @@ def _speak_once(text: str):
         pipeline = _get_pipeline()
         generator = pipeline(text, voice=VOICE, speed=SPEED)
 
-        for _, _, audio in generator:
-            if _stop.is_set():
-                break
-            # audio is a numpy float32 array at 24000 Hz
-            sd.play(audio, samplerate=24000)
-            sd.wait()
+        with sd.OutputStream(samplerate=24000, channels=1, dtype='float32') as stream:
+            for _, _, audio in generator:
+                if _stop.is_set():
+                    break
+                
+                block_size = 1024
+                offset = 0
+                while offset < len(audio):
+                    if _stop.is_set():
+                        break
+                    chunk = audio[offset:offset+block_size]
+                    if len(chunk) > 0:
+                        stream.write(chunk.reshape(-1, 1))
+                    offset += block_size
 
     except Exception as e:
         print(f"[TTS] Error: {e}")

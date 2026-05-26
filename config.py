@@ -42,10 +42,11 @@ CHAT_LLM_MODEL = os.getenv("CHAT_LLM_MODEL", "llama-3.3-70b-versatile")
 CHAT_LLM_TEMPERATURE = float(os.getenv("CHAT_LLM_TEMPERATURE", "0.7"))
 CHAT_LLM_MAX_TOKENS = int(os.getenv("CHAT_LLM_MAX_TOKENS", "1024"))
 CHAT_LLM_TIMEOUT = int(os.getenv("CHAT_LLM_TIMEOUT", "60"))
+CHAT_LLM_CTX = int(os.getenv("CHAT_LLM_CTX", "16384"))
 
-# Memory LLM — Fast local extraction
-MEMORY_LLM_PROVIDER = os.getenv("MEMORY_LLM_PROVIDER", "ollama")
-MEMORY_LLM_MODEL = os.getenv("MEMORY_LLM_MODEL", "qwen2.5:3b")
+# Memory LLM — Fast local extraction (or Gemini)
+MEMORY_LLM_PROVIDER = os.getenv("MEMORY_LLM_PROVIDER", "gemini")
+MEMORY_LLM_MODEL = os.getenv("MEMORY_LLM_MODEL", "gemini-2.5-flash")
 MEMORY_LLM_TEMPERATURE = float(os.getenv("MEMORY_LLM_TEMPERATURE", "0"))
 MEMORY_LLM_CTX = int(os.getenv("MEMORY_LLM_CTX", "2048"))
 
@@ -87,8 +88,8 @@ def validate_config():
     missing = []
     if CHAT_LLM_PROVIDER == "groq" and not GROQ_API_KEY and not GROQ_API_KEY_1:
         missing.append("GROQ_API_KEY or GROQ_API_KEY_1 is required when using Groq provider")
-    if (CHAT_LLM_PROVIDER == "gemini" or FALLBACK_LLM_PROVIDER == "gemini") and not GEMINI_API_KEY:
-        missing.append("GEMINI_API_KEY is required when using Gemini provider or fallback")
+    if (CHAT_LLM_PROVIDER == "gemini" or FALLBACK_LLM_PROVIDER == "gemini" or MEMORY_LLM_PROVIDER == "gemini") and not GEMINI_API_KEY:
+        missing.append("GEMINI_API_KEY is required when using Gemini provider, fallback, or memory LLM")
     return missing
 
 

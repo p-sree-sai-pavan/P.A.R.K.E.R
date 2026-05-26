@@ -1,0 +1,43 @@
+{
+  "flow_id": "tf_20260526_141722_a917f3",
+  "task_name": "Integrated Integration Test Flow",
+  "status": "succeeded",
+  "cwd": "",
+  "created_at": "2026-05-26 14:17:22",
+  "commands": [
+    "echo 'Starting test step 1'",
+    "powershell -Command \"Start-Sleep -Seconds 3\"",
+    "echo 'Step 1 complete, starting step 2'",
+    "powershell -Command \"Start-Sleep -Seconds 2\"",
+    "echo 'Step 2 complete! Task complete!'"
+  ],
+  "current_step_index": 4,
+  "steps": [
+    {
+      "command": "echo 'Starting test step 1'",
+      "status": "succeeded",
+      "duration": 0.17
+    },
+    {
+      "command": "powershell -Command \"Start-Sleep -Seconds 3\"",
+      "status": "succeeded",
+      "duration": 3.42
+    },
+    {
+      "command": "echo 'Step 1 complete, starting step 2'",
+      "status": "succeeded",
+      "duration": 0.21
+    },
+    {
+      "command": "powershell -Command \"Start-Sleep -Seconds 2\"",
+      "status": "succeeded",
+      "duration": 2.32
+    },
+    {
+      "command": "echo 'Step 2 complete! Task complete!'",
+      "status": "succeeded",
+      "duration": 0.16
+    }
+  ],
+  "ended_at": "2026-05-26 14:18:39"
+}

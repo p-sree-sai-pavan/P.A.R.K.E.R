@@ -1,0 +1,25 @@
+{
+  "profile": {
+    "hobbies": ["gaming", "reading"],
+    "favorite_editor": "VS Code"
+  },
+  "facts": [
+    "Pavan prefers working in dark mode.",
+    "Parker is currently running on Windows."
+  ],
+  "tasks": [
+    {
+      "content": "Verify upgraded CLI UI is working",
+      "priority": "high",
+      "due": "2026-05-23 15:00:00"
+    }
+  ],
+  "projects": [
+    {
+      "name": "CLI Enhancements",
+      "status": "active",
+      "stack": ["rich", "python"],
+      "summary": "Upgrading the Parker CLI layout"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "flow_id": "tf_20260526_142013_71efd0",
+  "task_name": "Detached Longevity Test Flow",
+  "status": "running",
+  "cwd": "",
+  "created_at": "2026-05-26 14:20:13",
+  "commands": [
+    "echo 'Detached step 1 starting'",
+    "powershell -Command \"Start-Sleep -Seconds 5\"",
+    "echo 'Detached step 1 complete'"
+  ],
+  "current_step_index": 0,
+  "steps": [
+    {
+      "command": "echo 'Detached step 1 starting'",
+      "status": "pending",
+      "duration": 0.0
+    },
+    {
+      "command": "powershell -Command \"Start-Sleep -Seconds 5\"",
+      "status": "pending",
+      "duration": 0.0
+    },
+    {
+      "command": "echo 'Detached step 1 complete'",
+      "status": "pending",
+      "duration": 0.0
+    }
+  ]
+}

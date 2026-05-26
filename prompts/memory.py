@@ -25,7 +25,7 @@ CONVERSATION:
 Return only the JSON object. No explanation. No markdown."""
 
 
-FACTS_EXTRACTION_PROMPT = """You extract discrete facts from a conversation into structured memory.
+FACTS_EXTRACTION_PROMPT = """You extract discrete facts from a conversation into structured memory in a completely generalized manner, ensuring you capture everything of substance without any selection bias.
 
 OUTPUT: A JSON array of fact objects.
 

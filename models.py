@@ -16,6 +16,7 @@ from config import (
     CHAT_LLM_TEMPERATURE,
     CHAT_LLM_MAX_TOKENS, 
     CHAT_LLM_TIMEOUT,
+    CHAT_LLM_CTX,
     MEMORY_LLM_PROVIDER, 
     MEMORY_LLM_MODEL, 
     MEMORY_LLM_TEMPERATURE,
@@ -104,12 +105,12 @@ def _gemini(key: str, model: str = None, temperature: float = None, max_tokens: 
         kwargs["timeout"] = timeout
     return ChatGoogleGenerativeAI(**kwargs)
 
-def _ollama(model: str = None, temperature: float = None):
+def _ollama(model: str = None, temperature: float = None, num_ctx: int = None):
     from langchain_ollama import ChatOllama
     return ChatOllama(
         model=model or MEMORY_LLM_MODEL,
         temperature=temperature if temperature is not None else MEMORY_LLM_TEMPERATURE,
-        num_ctx=MEMORY_LLM_CTX,
+        num_ctx=num_ctx or MEMORY_LLM_CTX,
     )
 
 
@@ -133,7 +134,11 @@ elif CHAT_LLM_PROVIDER == "gemini":
         timeout=CHAT_LLM_TIMEOUT,
     )
 elif CHAT_LLM_PROVIDER == "ollama":
-    chat_llm = _ollama(model=CHAT_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE)
+    chat_llm = _ollama(
+        model=CHAT_LLM_MODEL,
+        temperature=CHAT_LLM_TEMPERATURE,
+        num_ctx=CHAT_LLM_CTX
+    )
 else:
     raise ValueError(f"Unsupported CHAT_LLM_PROVIDER: {CHAT_LLM_PROVIDER}")
 
@@ -152,7 +157,8 @@ if FALLBACK_LLM_PROVIDER == "gemini":
 elif FALLBACK_LLM_PROVIDER == "ollama":
     fallback_llm = _ollama(
         model=FALLBACK_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE
+        temperature=CHAT_LLM_TEMPERATURE,
+        num_ctx=CHAT_LLM_CTX
     )
 elif FALLBACK_LLM_PROVIDER == "groq":
     fallback_llm = _groq(
@@ -173,6 +179,8 @@ if MEMORY_LLM_PROVIDER == "groq":
     rollup_llm = _groq(_K2, model=MEMORY_LLM_MODEL, temperature=0)
 elif MEMORY_LLM_PROVIDER == "ollama":
     rollup_llm = _ollama()
+elif MEMORY_LLM_PROVIDER == "gemini":
+    rollup_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
 else:
     raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
 
@@ -186,6 +194,9 @@ if MEMORY_LLM_PROVIDER == "groq":
 elif MEMORY_LLM_PROVIDER == "ollama":
     facts_llm    = _ollama()
     episodes_llm = _ollama()
+elif MEMORY_LLM_PROVIDER == "gemini":
+    facts_llm    = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
+    episodes_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
 else:
     raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
 
@@ -200,6 +211,9 @@ if MEMORY_LLM_PROVIDER == "groq":
 elif MEMORY_LLM_PROVIDER == "ollama":
     trigger_llm = _ollama()
     profile_llm = _ollama()
+elif MEMORY_LLM_PROVIDER == "gemini":
+    trigger_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
+    profile_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
 else:
     raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
 
@@ -212,6 +226,8 @@ if MEMORY_LLM_PROVIDER == "groq":
     projects_llm = _groq(_K2, model=MEMORY_LLM_MODEL, temperature=0)
 elif MEMORY_LLM_PROVIDER == "ollama":
     projects_llm = _ollama()
+elif MEMORY_LLM_PROVIDER == "gemini":
+    projects_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
 else:
     raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
 

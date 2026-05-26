@@ -102,8 +102,8 @@ def generate_startup_greeting(store, user_id: str) -> str:
         patterns_str = "none"
 
     greeting_prompt = f"""You are Parker, a personal AI modeled on JARVIS from Iron Man.
-Generate a dynamic startup greeting for Pavan (always address him as "sir").
-You are welcoming him back and demonstrating proactive awareness of his situation.
+Generate a sharp, dry, one-line startup greeting for Pavan (always address him as "sir").
+Demonstrate proactive awareness — pick ONE or TWO of the most relevant items from context and weave them into a single sentence naturally.
 
 CONTEXT:
 - Time of Day: {datetime.now().strftime("%I:%M %p")}
@@ -115,11 +115,11 @@ CONTEXT:
 - Observed Behavior Patterns & Habits: {patterns_str}
 
 RULES:
-1. Speak in your signature style: calm, dry, precise, British butler.
-2. Synthesize this information into a natural, organic greeting of 2 sentences (maximum 3). Do NOT list them mechanically.
-3. Show present, lived awareness: e.g., if there's an unfinished thread, a behavior pattern, or a habit, mention/comment on it organically (e.g. "This is the fourth session this week you've circled back to the memory bug without fixing it, sir.").
-4. Do NOT ask questions at the end. Make it a statement showing readiness.
-5. Do NOT include any markdown, tags, or emojis. Just the greeting text.
+1. MAXIMUM 2 sentences. Prefer 1.
+2. Speak like a British butler — calm, dry, precise. No enthusiasm.
+3. Do NOT list items mechanically. Pick the most interesting/relevant one and mention it organically.
+4. Do NOT end with a question. End as a statement of readiness.
+5. No markdown, tags, or emojis. Plain text only.
 
 Greeting:"""
 
@@ -193,6 +193,172 @@ def session_end(store):
     interface.print_success("Session state saved.")
 
 
+# ── Asynchronous & Proactive Helpers ──────────────────────────────────────────
+import queue
+import time
+import re
+from ears import ContinuousVoiceListener
+from mouth import stop_speaking
+
+voice_listener = None
+
+def update_listener_mode(current_mode, input_queue):
+    global voice_listener
+    if current_mode == "voice":
+        if not voice_listener:
+            # speech_detected_callback halts mouth playback (barge-in)
+            voice_listener = ContinuousVoiceListener(input_queue, stop_speaking)
+            voice_listener.start()
+    else:
+        if voice_listener:
+            voice_listener.stop()
+            voice_listener = None
+
+
+def apply_persona_filters(text: str) -> str:
+    """
+    Strips polite AI chatbot filler, reasoning monologue, and trailing questions.
+    """
+    if not text:
+        return text
+    
+    # 0. Strip reasoning monologue <think>...</think> blocks
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 1. Banned leading filler
+    fillers = [
+        r"^(certainly|absolutely|of course|sure|great|happy to help|no problem|understood|i understand|i see|that makes sense|indeed),?\s*",
+        r"^here is the information,?\s*",
+        r"^i have retrieved,?\s*",
+    ]
+    for f in fillers:
+        cleaned = re.sub(f, "", cleaned, flags=re.IGNORECASE)
+        
+    # 2. Banned trailing questions or polite helper queries
+    trailing = [
+        r"\bhow does that sound\??$",
+        r"\bwould you like me to.*$",
+        r"\bis there anything else.*$",
+        r"\blet me know if.*$",
+        r"\bfeel free to.*$",
+    ]
+    for t in trailing:
+        cleaned = re.sub(t, "", cleaned, flags=re.IGNORECASE)
+        
+    return cleaned.strip()
+
+
+def parse_due_date(due_str: str):
+    if not due_str:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(due_str.strip(), fmt)
+            if fmt == "%Y-%m-%d":
+                dt = dt.replace(hour=23, minute=59, second=59)
+            return dt
+        except ValueError:
+            continue
+    return None
+
+
+def send_telegram_notification(message: str):
+    import os
+    import requests
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_ALLOWED_USER")
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message
+    }
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        res.raise_for_status()
+    except Exception as e:
+        print(f"[Telegram Notifier Warning] Failed to send notification: {e}")
+
+
+def proactive_monitor_loop(store, input_queue):
+    notified_overdue_tasks = set()
+    notified_late_night = False
+    
+    while True:
+        # Check environment and tasks every 30 seconds
+        for _ in range(30):
+            time.sleep(1)
+            
+        try:
+            # 1. Overdue tasks check
+            active_tasks = load_active_tasks(store, USER_ID)
+            now = datetime.now()
+            
+            for task in active_tasks:
+                due_str = task.value.get("due")
+                if due_str:
+                    due_dt = parse_due_date(due_str)
+                    if due_dt and now > due_dt:
+                        task_key = task.key
+                        if task_key not in notified_overdue_tasks:
+                            notified_overdue_tasks.add(task_key)
+                            content = task.value.get("content", "")
+                            alert_msg = f"Sir, your task '{content}' was due at {due_str}. It is currently overdue."
+                            
+                            # Interrupt speech
+                            stop_speaking()
+                            
+                            # Print, speak, and send Telegram message
+                            print()
+                            interface.print_parker(alert_msg)
+                            speak(alert_msg)
+                            send_telegram_notification(alert_msg)
+                            
+            # 2. Late night alert check
+            hour = now.hour
+            if (hour >= 23 or hour < 4) and not notified_late_night:
+                from computer.telemetry import get_active_window_title, get_git_status
+                window = get_active_window_title().lower()
+                
+                # Check if user is coding
+                is_coding = any(editor in window for editor in ("vs code", "visual studio", "sublime", "pycharm", "vim", "terminal", "powershell", "command prompt", "git"))
+                if is_coding:
+                    git_status = get_git_status()
+                    uncommitted = git_status != "Clean (No modifications)" and "not a git" not in git_status.lower()
+                    
+                    if uncommitted:
+                        alert_msg = f"Sir, it is past midnight ({now.strftime('%I:%M %p')}) and you are still coding. I notice you have uncommitted changes in your repository. I suggest committing and calling it a night."
+                    else:
+                        alert_msg = f"Sir, it is past midnight ({now.strftime('%I:%M %p')}) and you are still coding in {get_active_window_title()}. I suggest calling it a night."
+                        
+                    stop_speaking()
+                    print()
+                    interface.print_parker(alert_msg)
+                    speak(alert_msg)
+                    send_telegram_notification(alert_msg)
+                    notified_late_night = True
+                    
+            if 8 <= hour < 20:
+                notified_late_night = False
+                
+        except Exception as e:
+            pass
+
+
+def cli_input_loop(input_queue, mode_holder):
+    while True:
+        try:
+            current_mode = mode_holder["mode"]
+            prompt = interface.get_user_prompt(current_mode)
+            user_input = interface.console.input(prompt).strip()
+            if user_input:
+                input_queue.put({"type": "text", "text": user_input})
+        except (KeyboardInterrupt, EOFError):
+            input_queue.put({"type": "exit"})
+            break
+
+
 if __name__ == "__main__":
     store = create_store()
     checkpointer = create_checkpointer()
@@ -211,27 +377,49 @@ if __name__ == "__main__":
     # Intro — print and speak
     with interface.get_spinner("Parker is computing greeting..."):
         intro = generate_startup_greeting(store, USER_ID)
-    interface.print_parker(intro)
-    speak(intro)
+        from computer.telemetry import get_system_telemetry
+        telemetry = get_system_telemetry()
+    intro_cleaned = apply_persona_filters(intro)
+    interface.print_parker(intro_cleaned)
+    interface.print_telemetry_dashboard(telemetry)
+    speak(intro_cleaned)
 
-    mode = "text"
+    # State containers
+    mode_holder = {"mode": "text"}
+    input_queue = queue.Queue()
+
+    # Start CLI input thread
+    cli_thread = threading.Thread(
+        target=cli_input_loop,
+        args=(input_queue, mode_holder),
+        name="CLIInputThread",
+        daemon=True
+    )
+    cli_thread.start()
+
+    # Start proactive background monitor thread
+    monitor_thread = threading.Thread(
+        target=proactive_monitor_loop,
+        args=(store, input_queue),
+        name="ProactiveMonitorThread",
+        daemon=True
+    )
+    monitor_thread.start()
 
     try:
         while True:
-            if mode == "text":
-                user_input = interface.console.input(
-                    interface.get_user_prompt("text")
-                ).strip()
-            else:
-                interface.console.input(
-                    interface.get_user_prompt("voice")
-                )
-                user_input = listen()
-
-            if not user_input:
-                interface.print_warning("Didn't catch that — try again.")
+            # Wait for any input (text from CLI, or voice from Continuous Listener)
+            try:
+                event = input_queue.get(timeout=1.0)
+            except queue.Empty:
                 continue
 
+            if event["type"] == "exit":
+                speak("Goodbye, Pavan.")
+                interface.print_goodbye()
+                break
+
+            user_input = event["text"]
             lower = user_input.lower()
 
             if lower in ("quit", "exit", "bye"):
@@ -240,21 +428,23 @@ if __name__ == "__main__":
                 break
 
             if lower == "v":
-                mode = "voice"
+                mode_holder["mode"] = "voice"
+                update_listener_mode("voice", input_queue)
                 interface.print_mode_switch("voice")
-                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode="voice")
                 continue
 
             if lower == "t":
-                mode = "text"
+                mode_holder["mode"] = "text"
+                update_listener_mode("text", input_queue)
                 interface.print_mode_switch("text")
-                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode="text")
                 continue
 
             if lower == "/clear":
                 interface.clear_screen()
                 interface.print_parker_banner()
-                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode_holder["mode"])
                 interface.print_commands_table()
                 interface.print_divider()
                 continue
@@ -289,20 +479,57 @@ if __name__ == "__main__":
                 interface.print_patterns_panel(raw)
                 continue
 
-            interface.print_user(user_input)
+            if lower == "/telemetry":
+                from computer.telemetry import get_system_telemetry
+                telemetry = get_system_telemetry()
+                interface.print_telemetry_dashboard(telemetry)
+                continue
 
+            if lower.startswith("/import "):
+                parts = user_input.split(" ", 1)
+                if len(parts) < 2:
+                    interface.print_error("Please specify the file path: /import <filepath>")
+                    continue
+                file_path = parts[1].strip()
+                if (file_path.startswith('"') and file_path.endswith('"')) or (file_path.startswith("'") and file_path.endswith("'")):
+                    file_path = file_path[1:-1]
+                try:
+                    from import_memory import run_import
+                    with interface.get_spinner(f"Importing memories from {file_path}..."):
+                        stats = run_import(file_path, USER_ID)
+                    
+                    t = interface.Table(show_header=True, header_style="ac.bold", box=interface.box.ROUNDED, border_style="border")
+                    t.add_column("Category", style="pk")
+                    t.add_column("Items Imported", style="tx.bold", justify="right")
+                    for k, v in stats.items():
+                        t.add_row(k, str(v))
+                    
+                    interface.console.print()
+                    interface.console.print(interface.Padding(t, (0, 4, 0, 4)))
+                    interface.print_success("Import completed successfully.")
+                except Exception as e:
+                    interface.print_error(f"Import failed: {str(e)}")
+                continue
+
+            # Echo voice inputs to the console so Pavan sees what Whisper heard
+            if event["type"] == "voice":
+                interface.print_user(user_input)
+
+            # Generate response
             response = ask(graph, user_input)
 
             if response != "(API Error - Please retry)":
-                # Print first, then speak — single TTS request = no gaps
-                interface.print_parker(response)
-                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode)
-                speak(response)
+                response_cleaned = apply_persona_filters(response)
+                interface.print_parker(response_cleaned)
+                interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode=mode_holder["mode"])
+                speak(response_cleaned)
 
     except KeyboardInterrupt:
         interface.print_system("Parker shutting down…")
 
     finally:
+        # Stop background voice listener if active
+        update_listener_mode("text", input_queue)
         interface.print_system("Waiting for background memory writes…")
         wait_for_background_jobs()
         session_end(store)

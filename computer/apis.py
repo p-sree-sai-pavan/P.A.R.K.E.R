@@ -644,8 +644,8 @@ def resolve_intent(intent: str, params: dict = None) -> str:
         location            → auto-detect current location
     """
     params = params or {}
-    city    = params.get("city")
-    topic   = params.get("topic", "")
+    city    = params.get("city") or params.get("location")
+    topic   = params.get("topic") or params.get("query", "")  # support both 'topic' and 'query' keys
     symbol  = params.get("symbol", "BTC")
     date    = params.get("date", "")
     country = params.get("country", "IN")
