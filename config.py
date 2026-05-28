@@ -37,12 +37,12 @@ DEFAULT_THREAD_ID = os.getenv("DEFAULT_THREAD_ID", "thread_u1")
 # ════════════════════════════════════════════════════════════════════════════════
 
 # Chat LLM — High quality responses
-CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", "groq")
-CHAT_LLM_MODEL = os.getenv("CHAT_LLM_MODEL", "llama-3.3-70b-versatile")
+CHAT_LLM_PROVIDER = os.getenv("CHAT_LLM_PROVIDER", "ollama")
+CHAT_LLM_MODEL = os.getenv("CHAT_LLM_MODEL", "qwen2.5:7b")
 CHAT_LLM_TEMPERATURE = float(os.getenv("CHAT_LLM_TEMPERATURE", "0.7"))
 CHAT_LLM_MAX_TOKENS = int(os.getenv("CHAT_LLM_MAX_TOKENS", "1024"))
-CHAT_LLM_TIMEOUT = int(os.getenv("CHAT_LLM_TIMEOUT", "60"))
-CHAT_LLM_CTX = int(os.getenv("CHAT_LLM_CTX", "16384"))
+CHAT_LLM_TIMEOUT = int(os.getenv("CHAT_LLM_TIMEOUT", "120"))
+CHAT_LLM_CTX = int(os.getenv("CHAT_LLM_CTX", "32768"))
 
 # Memory LLM — Fast local extraction (or Gemini)
 MEMORY_LLM_PROVIDER = os.getenv("MEMORY_LLM_PROVIDER", "gemini")
@@ -57,6 +57,9 @@ FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "gemini-2.5-flash")
 # Embeddings
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "mxbai-embed-large")
 EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1024"))
+
+# Ollama base URL (default local)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -90,6 +93,12 @@ def validate_config():
         missing.append("GROQ_API_KEY or GROQ_API_KEY_1 is required when using Groq provider")
     if (CHAT_LLM_PROVIDER == "gemini" or FALLBACK_LLM_PROVIDER == "gemini" or MEMORY_LLM_PROVIDER == "gemini") and not GEMINI_API_KEY:
         missing.append("GEMINI_API_KEY is required when using Gemini provider, fallback, or memory LLM")
+    if CHAT_LLM_PROVIDER == "ollama":
+        import urllib.request
+        try:
+            urllib.request.urlopen(OLLAMA_BASE_URL, timeout=2)
+        except Exception:
+            missing.append(f"Ollama does not appear to be running at {OLLAMA_BASE_URL}. Run: ollama serve")
     return missing
 
 

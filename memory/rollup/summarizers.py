@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from memory.utils import full_scan, parse_json_object
 from models import rollup_llm
@@ -171,7 +171,10 @@ def _rollup_year(store, user_id: str, year_label: str):
 
 def _parse_rollup(prompt: str) -> dict:
     try:
-        response = rollup_llm.invoke([SystemMessage(content=prompt)])
+        response = rollup_llm.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content="Generate rollup summary now.")
+        ])
         return parse_json_object(response.content)
     except Exception as e:
         print(f"[Rollup] Summary generation error: {e}")

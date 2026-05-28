@@ -152,3 +152,6 @@ Chatterbox-TTS-Server-windows-easyInstallation/
 *.docx
 *.lnk
 *.wav
+
+# Private / Sensitive Data
+Claudedata/

@@ -1,5 +1,5 @@
 import json
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from models import profile_llm
 from prompts.memory import PROFILE_EXTRACTION_PROMPT
@@ -42,7 +42,8 @@ def _extract_and_save(store, user_id: str, messages: list):
                 SystemMessage(content=PROFILE_EXTRACTION_PROMPT.format(
                     existing_profile=json.dumps(existing, indent=2) if existing else "(empty)",
                     conversation=conversation,
-                ))
+                )),
+                HumanMessage(content="Extract profile changes now.")
             ])
 
             extracted = parse_json_object(response.content)

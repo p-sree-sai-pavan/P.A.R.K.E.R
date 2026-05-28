@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from models import facts_llm as tasks_llm  # Reuse key 3 (facts/episodes key)
 from prompts.memory import TASK_EXTRACTION_PROMPT
@@ -114,7 +114,8 @@ def _extract_and_save(store, user_id: str, messages: list):
                     current_time=current_time,
                     existing_tasks=existing_text or "(empty)",
                     conversation=conversation,
-                ))
+                )),
+                HumanMessage(content="Extract tasks now.")
             ])
 
             extracted = parse_json_array(response.content)

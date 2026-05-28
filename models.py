@@ -1,15 +1,13 @@
 """
 models.py — LLM instances for Parker AI
-Each task gets its own Groq key to avoid rate limit conflicts.
 
-Key assignment:
-  key1 → chat_llm          (heaviest, serial, every message)
-  key2 → rollup_llm        (heavy, startup/shutdown only)
-  key3 → facts_llm + episodes_llm  (medium, background)
-  key4 → trigger_llm + profile_llm (tiny+small, mixed)
+Dynamic key-rotating pools for Groq.
+Independent Chat Model on Gemini.
+Ollama Fallbacks.
 """
 
 import os
+import threading
 from config import (
     CHAT_LLM_PROVIDER, 
     CHAT_LLM_MODEL, 
@@ -34,38 +32,101 @@ if _config_errors:
     for err in _config_errors:
         print(f"[Config Warning] {err}")
 
-import threading
+# ── Smart defaults for Groq rate limit optimization ─────────────────────────
+TRIGGER_LLM_MODEL = os.getenv("TRIGGER_LLM_MODEL")
+ROLLUP_LLM_MODEL = os.getenv("ROLLUP_LLM_MODEL")
+PROJECTS_LLM_MODEL = os.getenv("PROJECTS_LLM_MODEL")
+EPISODES_LLM_MODEL = os.getenv("EPISODES_LLM_MODEL")
+FACTS_LLM_MODEL = os.getenv("FACTS_LLM_MODEL")
+PROFILE_LLM_MODEL = os.getenv("PROFILE_LLM_MODEL")
 
-class ResilientStructuredModel:
-    def __init__(self, primary_structured, fallback_structured, name: str):
-        self.primary_structured = primary_structured
+if MEMORY_LLM_PROVIDER == "groq":
+    # Offload tasks to Qwen 32B (500k TPD, robust function calling and summaries)
+    TRIGGER_LLM_MODEL = TRIGGER_LLM_MODEL or "qwen/qwen3-32b"
+    ROLLUP_LLM_MODEL = ROLLUP_LLM_MODEL or "qwen/qwen3-32b"
+    PROJECTS_LLM_MODEL = PROJECTS_LLM_MODEL or "qwen/qwen3-32b"
+    EPISODES_LLM_MODEL = EPISODES_LLM_MODEL or "qwen/qwen3-32b"
+    # Reserve Llama-3.3-70b-versatile (100k TPD) for high-reasoning tasks (facts/profile)
+    FACTS_LLM_MODEL = FACTS_LLM_MODEL or MEMORY_LLM_MODEL or "llama-3.3-70b-versatile"
+    PROFILE_LLM_MODEL = PROFILE_LLM_MODEL or MEMORY_LLM_MODEL or "llama-3.3-70b-versatile"
+else:
+    TRIGGER_LLM_MODEL = TRIGGER_LLM_MODEL or MEMORY_LLM_MODEL
+    ROLLUP_LLM_MODEL = ROLLUP_LLM_MODEL or MEMORY_LLM_MODEL
+    PROJECTS_LLM_MODEL = PROJECTS_LLM_MODEL or MEMORY_LLM_MODEL
+    EPISODES_LLM_MODEL = EPISODES_LLM_MODEL or MEMORY_LLM_MODEL
+    FACTS_LLM_MODEL = FACTS_LLM_MODEL or MEMORY_LLM_MODEL
+    PROFILE_LLM_MODEL = PROFILE_LLM_MODEL or MEMORY_LLM_MODEL
+
+
+class RotatedStructuredModel:
+    def __init__(self, primary_structured_list: list, fallback_structured, name: str):
+        self.instances = primary_structured_list
         self.fallback_structured = fallback_structured
         self.name = name
+        self._index = 0
+        self._lock = threading.Lock()
+
+    def _get_next_instance(self):
+        with self._lock:
+            inst = self.instances[self._index]
+            self._index = (self._index + 1) % len(self.instances)
+            return inst
 
     def invoke(self, *args, **kwargs):
-        try:
-            return self.primary_structured.invoke(*args, **kwargs)
-        except Exception as e:
-            print(f"[{self.name} Structured Warning] Primary LLM failed: {e}. Falling back...")
-            return self.fallback_structured.invoke(*args, **kwargs)
+        last_err = None
+        for i in range(len(self.instances)):
+            inst = self._get_next_instance()
+            try:
+                return inst.invoke(*args, **kwargs)
+            except Exception as e:
+                err_msg = str(e).lower()
+                if any(k in err_msg for k in ("rate", "429", "limit", "quota")):
+                    print(f"[{self.name} Structured Info] API key index {self._index} rate limited. Retrying with next key in rotation...")
+                    last_err = e
+                    continue
+                else:
+                    last_err = e
+                    break
+        print(f"[{self.name} Structured Warning] All rotated keys rate limited: {last_err}. Falling back to Ollama...")
+        return self.fallback_structured.invoke(*args, **kwargs)
 
-class ResilientChatModel:
-    def __init__(self, primary_llm, fallback_llm, name: str):
-        self.primary_llm = primary_llm
+
+class RotatedChatModel:
+    def __init__(self, primary_llm_list: list, fallback_llm, name: str):
+        self.instances = primary_llm_list
         self.fallback_llm = fallback_llm
         self.name = name
+        self._index = 0
+        self._lock = threading.Lock()
+
+    def _get_next_instance(self):
+        with self._lock:
+            inst = self.instances[self._index]
+            self._index = (self._index + 1) % len(self.instances)
+            return inst
 
     def invoke(self, *args, **kwargs):
-        try:
-            return self.primary_llm.invoke(*args, **kwargs)
-        except Exception as e:
-            print(f"[{self.name} Warning] Primary LLM failed: {e}. Falling back...")
-            return self.fallback_llm.invoke(*args, **kwargs)
+        last_err = None
+        for i in range(len(self.instances)):
+            inst = self._get_next_instance()
+            try:
+                return inst.invoke(*args, **kwargs)
+            except Exception as e:
+                err_msg = str(e).lower()
+                if any(k in err_msg for k in ("rate", "429", "limit", "quota")):
+                    print(f"[{self.name} Info] API key index {self._index} rate limited. Retrying with next key in rotation...")
+                    last_err = e
+                    continue
+                else:
+                    last_err = e
+                    break
+        print(f"[{self.name} Warning] All rotated keys rate limited: {last_err}. Falling back to Ollama...")
+        return self.fallback_llm.invoke(*args, **kwargs)
 
     def with_structured_output(self, schema, **kwargs):
-        primary_structured = self.primary_llm.with_structured_output(schema, **kwargs)
+        structured_instances = [inst.with_structured_output(schema, **kwargs) for inst in self.instances]
         fallback_structured = self.fallback_llm.with_structured_output(schema, **kwargs)
-        return ResilientStructuredModel(primary_structured, fallback_structured, self.name)
+        return RotatedStructuredModel(structured_instances, fallback_structured, self.name)
 
 
 # ── Load keys ──────────────────────────────────────────────────────────────────
@@ -89,6 +150,24 @@ def _groq(key: str, model: str = None, temperature: float = None, max_tokens: in
     if timeout:
         kwargs["timeout"] = timeout
     return ChatGroq(**kwargs)
+
+def _groq_pool(model: str, temperature: float = 0):
+    """
+    Creates a load-balanced pool of ChatGroq instances from the 4 configured keys.
+    """
+    pool = []
+    # De-duplicate keys so we don't double-add if some variables default to K1
+    unique_keys = []
+    for k in [_K1, _K2, _K3, _K4]:
+        if k and k not in unique_keys:
+            unique_keys.append(k)
+    
+    if not unique_keys:
+        raise ValueError("No Groq API keys found in environment. Check .env")
+        
+    for key in unique_keys:
+        pool.append(_groq(key, model=model, temperature=temperature))
+    return pool
 
 def _gemini(key: str, model: str = None, temperature: float = None, max_tokens: int = None, timeout: int = None):
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -114,136 +193,65 @@ def _ollama(model: str = None, temperature: float = None, num_ctx: int = None):
     )
 
 
-# ── Chat LLM — key1 solo ───────────────────────────────────────────────────────
-# Heaviest: full memory context + conversation history + long responses
+# ── Chat LLM — Single Cloud Instance ──────────────────────────────────────────
 
 if CHAT_LLM_PROVIDER == "groq":
-    chat_llm = _groq(
-        _K1,
-        model=CHAT_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        max_tokens=CHAT_LLM_MAX_TOKENS,
-        timeout=CHAT_LLM_TIMEOUT,
-    )
-elif CHAT_LLM_PROVIDER == "gemini":
-    chat_llm = _gemini(
-        GEMINI_API_KEY,
-        model=CHAT_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        max_tokens=CHAT_LLM_MAX_TOKENS,
-        timeout=CHAT_LLM_TIMEOUT,
-    )
+    _chat_base = _groq(_K1, model=CHAT_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, max_tokens=CHAT_LLM_MAX_TOKENS, timeout=CHAT_LLM_TIMEOUT)
 elif CHAT_LLM_PROVIDER == "ollama":
-    chat_llm = _ollama(
-        model=CHAT_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        num_ctx=CHAT_LLM_CTX
-    )
+    _chat_base = _ollama(model=CHAT_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, num_ctx=CHAT_LLM_CTX)
+elif CHAT_LLM_PROVIDER == "gemini":
+    _chat_base = _gemini(GEMINI_API_KEY, model=CHAT_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, max_tokens=CHAT_LLM_MAX_TOKENS, timeout=CHAT_LLM_TIMEOUT)
 else:
     raise ValueError(f"Unsupported CHAT_LLM_PROVIDER: {CHAT_LLM_PROVIDER}")
 
 
 # ── Fallback LLM ─────────────────────────────────────────────────────────────
-# Used when the primary Chat LLM encounters rate limits or connection errors.
+# Local Ollama fallback for all models (highly resilient, zero cost/limit)
 
 if FALLBACK_LLM_PROVIDER == "gemini":
-    fallback_llm = _gemini(
-        GEMINI_API_KEY,
-        model=FALLBACK_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        max_tokens=CHAT_LLM_MAX_TOKENS,
-        timeout=CHAT_LLM_TIMEOUT,
-    )
+    fallback_llm = _gemini(GEMINI_API_KEY, model=FALLBACK_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, max_tokens=CHAT_LLM_MAX_TOKENS, timeout=CHAT_LLM_TIMEOUT)
 elif FALLBACK_LLM_PROVIDER == "ollama":
-    fallback_llm = _ollama(
-        model=FALLBACK_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        num_ctx=CHAT_LLM_CTX
-    )
+    fallback_llm = _ollama(model=FALLBACK_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, num_ctx=CHAT_LLM_CTX)
 elif FALLBACK_LLM_PROVIDER == "groq":
-    fallback_llm = _groq(
-        _K1,
-        model=FALLBACK_LLM_MODEL,
-        temperature=CHAT_LLM_TEMPERATURE,
-        max_tokens=CHAT_LLM_MAX_TOKENS,
-        timeout=CHAT_LLM_TIMEOUT,
-    )
+    fallback_llm = _groq(_K1, model=FALLBACK_LLM_MODEL, temperature=CHAT_LLM_TEMPERATURE, max_tokens=CHAT_LLM_MAX_TOKENS, timeout=CHAT_LLM_TIMEOUT)
 else:
     raise ValueError(f"Unsupported FALLBACK_LLM_PROVIDER: {FALLBACK_LLM_PROVIDER}")
 
 
-# ── Rollup LLM — key2 solo ────────────────────────────────────────────────────
-# Heavy but only runs at startup/shutdown. Day/week/month/year summaries.
+# ── Setup pools for Memory Workers ───────────────────────────────────────────
 
 if MEMORY_LLM_PROVIDER == "groq":
-    rollup_llm = _groq(_K2, model=MEMORY_LLM_MODEL, temperature=0)
+    rollup_llm   = RotatedChatModel(_groq_pool(ROLLUP_LLM_MODEL, 0), fallback_llm, "RollupModel")
+    facts_llm    = RotatedChatModel(_groq_pool(FACTS_LLM_MODEL, 0), fallback_llm, "FactsModel")
+    episodes_llm = RotatedChatModel(_groq_pool(EPISODES_LLM_MODEL, 0), fallback_llm, "EpisodesModel")
+    trigger_llm  = RotatedChatModel(_groq_pool(TRIGGER_LLM_MODEL, 0), fallback_llm, "TriggerModel")
+    profile_llm  = RotatedChatModel(_groq_pool(PROFILE_LLM_MODEL, 0), fallback_llm, "ProfileModel")
+    projects_llm = RotatedChatModel(_groq_pool(PROJECTS_LLM_MODEL, 0), fallback_llm, "ProjectsModel")
+
 elif MEMORY_LLM_PROVIDER == "ollama":
-    rollup_llm = _ollama()
+    rollup_llm   = RotatedChatModel([_ollama(model=ROLLUP_LLM_MODEL)], fallback_llm, "RollupModel")
+    facts_llm    = RotatedChatModel([_ollama(model=FACTS_LLM_MODEL)], fallback_llm, "FactsModel")
+    episodes_llm = RotatedChatModel([_ollama(model=EPISODES_LLM_MODEL)], fallback_llm, "EpisodesModel")
+    trigger_llm  = RotatedChatModel([_ollama(model=TRIGGER_LLM_MODEL)], fallback_llm, "TriggerModel")
+    profile_llm  = RotatedChatModel([_ollama(model=PROFILE_LLM_MODEL)], fallback_llm, "ProfileModel")
+    projects_llm = RotatedChatModel([_ollama(model=PROJECTS_LLM_MODEL)], fallback_llm, "ProjectsModel")
+
 elif MEMORY_LLM_PROVIDER == "gemini":
-    rollup_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
+    rollup_llm   = RotatedChatModel([_gemini(GEMINI_API_KEY, model=ROLLUP_LLM_MODEL, temperature=0)], fallback_llm, "RollupModel")
+    facts_llm    = RotatedChatModel([_gemini(GEMINI_API_KEY, model=FACTS_LLM_MODEL, temperature=0)], fallback_llm, "FactsModel")
+    episodes_llm = RotatedChatModel([_gemini(GEMINI_API_KEY, model=EPISODES_LLM_MODEL, temperature=0)], fallback_llm, "EpisodesModel")
+    trigger_llm  = RotatedChatModel([_gemini(GEMINI_API_KEY, model=TRIGGER_LLM_MODEL, temperature=0)], fallback_llm, "TriggerModel")
+    profile_llm  = RotatedChatModel([_gemini(GEMINI_API_KEY, model=PROFILE_LLM_MODEL, temperature=0)], fallback_llm, "ProfileModel")
+    projects_llm = RotatedChatModel([_gemini(GEMINI_API_KEY, model=PROJECTS_LLM_MODEL, temperature=0)], fallback_llm, "ProjectsModel")
+
 else:
     raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
 
 
-# ── Facts + Episodes LLM — key3 shared ───────────────────────────────────────
-# Both run in background after each chat turn. Medium token load.
+# Wrap Chat LLM in Rotated wrapper for resilience (single element pool)
+chat_llm = RotatedChatModel([_chat_base], fallback_llm, "ChatModel")
 
-if MEMORY_LLM_PROVIDER == "groq":
-    facts_llm    = _groq(_K3, model=MEMORY_LLM_MODEL, temperature=0)
-    episodes_llm = _groq(_K3, model=MEMORY_LLM_MODEL, temperature=0)
-elif MEMORY_LLM_PROVIDER == "ollama":
-    facts_llm    = _ollama()
-    episodes_llm = _ollama()
-elif MEMORY_LLM_PROVIDER == "gemini":
-    facts_llm    = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
-    episodes_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
-else:
-    raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
-
-
-# ── Trigger + Profile LLM — key4 shared ──────────────────────────────────────
-# Trigger: tiny, serial (runs before every chat).
-# Profile: small, background. Minimal overlap.
-
-if MEMORY_LLM_PROVIDER == "groq":
-    trigger_llm = _groq(_K4, model=MEMORY_LLM_MODEL, temperature=0)
-    profile_llm = _groq(_K4, model=MEMORY_LLM_MODEL, temperature=0)
-elif MEMORY_LLM_PROVIDER == "ollama":
-    trigger_llm = _ollama()
-    profile_llm = _ollama()
-elif MEMORY_LLM_PROVIDER == "gemini":
-    trigger_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
-    profile_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
-else:
-    raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
-
-
-# ── Projects LLM — key2 shared with rollup ───────────────────────────────────
-# Rollup runs startup/shutdown. Projects runs background after chat.
-# Minimal time overlap → safe to share key2.
-
-if MEMORY_LLM_PROVIDER == "groq":
-    projects_llm = _groq(_K2, model=MEMORY_LLM_MODEL, temperature=0)
-elif MEMORY_LLM_PROVIDER == "ollama":
-    projects_llm = _ollama()
-elif MEMORY_LLM_PROVIDER == "gemini":
-    projects_llm = _gemini(GEMINI_API_KEY, model=MEMORY_LLM_MODEL, temperature=0)
-else:
-    raise ValueError(f"Unsupported MEMORY_LLM_PROVIDER: {MEMORY_LLM_PROVIDER}")
-
-
-# ── Resilient Wrappers ─────────────────────────────────────────────────────────
-
-chat_llm = ResilientChatModel(chat_llm, fallback_llm, "ChatModel")
-rollup_llm = ResilientChatModel(rollup_llm, fallback_llm, "RollupModel")
-facts_llm = ResilientChatModel(facts_llm, fallback_llm, "FactsModel")
-episodes_llm = ResilientChatModel(episodes_llm, fallback_llm, "EpisodesModel")
-trigger_llm = ResilientChatModel(trigger_llm, fallback_llm, "TriggerModel")
-profile_llm = ResilientChatModel(profile_llm, fallback_llm, "ProfileModel")
-projects_llm = ResilientChatModel(projects_llm, fallback_llm, "ProjectsModel")
-
-# ── memory_llm alias — kept for any missed import ─────────────────────────────
-# Points to key3. If any file still imports memory_llm it won't break.
+# Alias kept for backward-compatibility
 memory_llm = facts_llm
 
 

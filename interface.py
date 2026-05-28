@@ -377,6 +377,7 @@ def print_commands_table():
         ("/facts",         "list stored facts"),
         ("/projects",      "list active projects"),
         ("/tasks",         "list pending tasks"),
+        ("/skills",        "list available OpenClaw skills"),
         ("/patterns",      "list observed patterns & habits"),
         ("exit",           "save & quit"),
     ]
@@ -618,6 +619,41 @@ def print_patterns_panel(patterns: list):
     panel = Panel(
         Padding(t, (0, 0, 0, 1)),
         title=Text(" observed patterns & habits ", style="pk"),
+        title_align="left",
+        border_style="border.hi",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print()
+    console.print(Padding(panel, (0, 0, 0, 2)))
+    console.print()
+
+
+def print_skills_panel(skills: list):
+    """Display all available OpenClaw skills."""
+    if not skills:
+        print_system("No skills detected in gateway/skills or gateway/.agents/skills.")
+        return
+
+    t = Table(
+        show_header=False,
+        show_edge=False,
+        box=None,
+        padding=(0, 3, 0, 0),
+    )
+    t.add_column(style="tx.bold", min_width=18)
+    t.add_column(style="tx", min_width=30)
+    t.add_column(style="tx.dim")
+
+    for s in skills:
+        name = s.get("name", "unknown")
+        description = s.get("description", "")
+        location = s.get("location", "")
+        t.add_row(name, description, location)
+
+    panel = Panel(
+        Padding(t, (0, 0, 0, 1)),
+        title=Text(" available skills ", style="pk"),
         title_align="left",
         border_style="border.hi",
         box=box.ROUNDED,

@@ -71,16 +71,40 @@ def wait_for_background_jobs(timeout: float = 15.0):
 
 # ── Message formatting ─────────────────────────────────────────────────────────
 
+def get_message_content(msg) -> str:
+    if msg is None:
+        return ""
+    if hasattr(msg, "content"):
+        c = msg.content
+        if isinstance(c, list):
+            parts = []
+            for item in c:
+                if isinstance(item, dict):
+                    if "text" in item:
+                        parts.append(item["text"])
+                    elif item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts)
+        return c or ""
+    if isinstance(msg, dict):
+        return msg.get("content", "") or ""
+    return str(msg)
+
+
 def format_messages(messages: list) -> str:
     lines = []
     for m in messages:
         if hasattr(m, "type"):
             role = "User" if m.type == "human" else "Parker"
-            lines.append(f"{role}: {m.content}")
+            content = get_message_content(m)
+            lines.append(f"{role}: {content}")
         elif isinstance(m, dict):
             role = "User" if m.get("role") == "user" else "Parker"
             lines.append(f"{role}: {m.get('content', '')}")
     return "\n".join(lines)
+
 
 
 # ── JSON parsing ───────────────────────────────────────────────────────────────

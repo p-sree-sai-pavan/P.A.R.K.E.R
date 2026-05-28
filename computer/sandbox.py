@@ -48,13 +48,31 @@ def write_sandbox_file(file_path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 def read_sandbox_file(file_path: str) -> str:
-    """Read and return text content from a file inside the sandbox."""
+    """Read and return text content from a file inside the sandbox or allowed gateway skills."""
     try:
-        abs_path = _resolve_path(file_path)
+        # Check if the path points to gateway skills
+        abs_path = os.path.abspath(file_path)
+        gateway_skills = os.path.abspath(os.path.join(SANDBOX_DIR, "..", "gateway", "skills"))
+        gateway_agents_skills = os.path.abspath(os.path.join(SANDBOX_DIR, "..", "gateway", ".agents", "skills"))
+        
+        is_skill_file = False
+        if abs_path.startswith(gateway_skills) or abs_path.startswith(gateway_agents_skills):
+            is_skill_file = True
+        else:
+            # Handle relative path references (like gateway/skills/weather/SKILL.md)
+            norm_rel = os.path.normpath(file_path)
+            candidate_abs = os.path.abspath(os.path.join(SANDBOX_DIR, "..", norm_rel))
+            if candidate_abs.startswith(gateway_skills) or candidate_abs.startswith(gateway_agents_skills):
+                abs_path = candidate_abs
+                is_skill_file = True
+
+        if not is_skill_file:
+            abs_path = _resolve_path(file_path)
+
         if not os.path.exists(abs_path):
-            return f"Error: sandbox/{file_path} does not exist."
+            return f"Error: {file_path} does not exist."
         if os.path.isdir(abs_path):
-            return f"Error: sandbox/{file_path} is a directory."
+            return f"Error: {file_path} is a directory."
         with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
             return f.read()
     except Exception as e:

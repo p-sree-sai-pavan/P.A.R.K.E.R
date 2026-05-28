@@ -45,11 +45,8 @@ def run_bridge():
         )
 
         last_msg = result["messages"][-1]
-        reply = ""
-        if hasattr(last_msg, "content"):
-            reply = last_msg.content
-        elif isinstance(last_msg, dict):
-            reply = last_msg.get("content", "")
+        from memory.utils import get_message_content
+        reply = get_message_content(last_msg)
 
         # Clean persona filters similar to main.py
         import re

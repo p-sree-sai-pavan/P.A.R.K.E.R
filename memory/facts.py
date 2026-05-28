@@ -1,5 +1,5 @@
 import time
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from models import facts_llm
 from prompts.memory import FACTS_EXTRACTION_PROMPT
@@ -121,7 +121,8 @@ def _extract_and_save(store, user_id: str, messages: list):
                 SystemMessage(content=FACTS_EXTRACTION_PROMPT.format(
                     existing_facts=existing_text or "(empty)",
                     conversation=conversation,
-                ))
+                )),
+                HumanMessage(content="Extract facts now.")
             ])
 
             extracted = parse_json_array(response.content)

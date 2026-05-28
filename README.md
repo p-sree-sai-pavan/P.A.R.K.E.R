@@ -5,16 +5,16 @@
 # P · A · R · K · E · R
 ### **P**ersonal **A**I with **R**ecursive **K**nowledge & **E**pisodic **R**ecall
 
-*A premium, production-grade, local-first JARVIS-style companion built with LangGraph. Employs a vector-backed hierarchical summary tree, multi-action desktop/browser orchestration, sound-activity-guided voice loops, and resilient API failovers.*
+*A premium, production-grade, local-first JARVIS-style companion built with LangGraph. Employs a vector-backed hierarchical summary tree, multi-action desktop/browser orchestration, sound-activity-guided voice loops, resilient API failovers, dynamic key-rotating pools, and real-time multimodal live streams.*
 
 <br/>
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Python 3.11 / 3.12](https://img.shields.io/badge/Python-3.11%20%2F%203.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2.x-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL_+_pgvector-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
-[![Groq](https://img.shields.io/badge/Groq_LLaMA_70B-F55036?style=flat-square&logo=groq&logoColor=white)](https://groq.com)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_Embeddings-000000?style=flat-square&logo=ollama&logoColor=white)](https://ollama.com)
-[![Gemini Fallback](https://img.shields.io/badge/Gemini-Resilient_Fallback-8E75C2?style=flat-square&logo=google-gemini&logoColor=white)](https://ai.google.dev/)
+[![Gemini Live](https://img.shields.io/badge/Gemini_Live-Websocket_Voice-8E75C2?style=flat-square&logo=google-gemini&logoColor=white)](https://ai.google.dev/)
+[![Groq Pools](https://img.shields.io/badge/Groq-Key_Rotation_Pools-F55036?style=flat-square&logo=groq&logoColor=white)](https://groq.com)
+[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM_%26_Embed-000000?style=flat-square&logo=ollama&logoColor=white)](https://ollama.com)
 
 <br/>
 
@@ -22,7 +22,7 @@
 
 ---
 
-[Core Philosophy](#-core-philosophy) • [LangGraph routing](#-langgraph-routing-state-machine) • [Memory Architecture](#-memory-architecture) • [Execution Senses ("The Hands")](#-execution-senses-the-hands) • [System Resilience](#-system-resilience) • [Codebase Map](#-codebase-navigation-map) • [Quickstart](#-quickstart--deployment) • [CLI Commands](#-cli-commands--controls)
+[Core Philosophy](#-core-philosophy-the-lived-consciousness) • [LangGraph State Machine](#-langgraph-routing-state-machine) • [Memory Architecture](#-memory-architecture) • [Execution Senses](#-execution-senses-the-hands-ears--mouth) • [Dynamic Skills Loader](#-openclaw-dynamic-skills-loader) • [System Resilience](#-system-resilience) • [Codebase Navigation Map](#-codebase-navigation-map) • [Quickstart](#-quickstart--deployment) • [CLI Commands](#-cli-commands--controls)
 
 ---
 
@@ -51,11 +51,11 @@ Parker's conversational pipeline, state management, and tool executions are orch
 graph TD
     %% Define Nodes
     StartNode([User Message])
-    TriggerNode["<b>trigger_node</b><br>Classifies memory & storage needs"]
-    RetrieveNode["<b>retrieve_node</b><br>Compiles profile, facts, tasks, & episodes"]
-    ChatNode["<b>chat_node</b><br>Formulates response under voice rules"]
-    ComputerNode["<b>computer_node</b><br>Executes Playwright, Desktop, or APIs"]
-    RememberNode["<b>remember_node</b><br>Spawns background extraction queues"]
+    TriggerNode["<b>trigger_node</b><br/>Classifies memory & storage needs"]
+    RetrieveNode["<b>retrieve_node</b><br/>Compiles profile, facts, tasks, skills, & episodes"]
+    ChatNode["<b>chat_node</b><br/>Formulates response under voice rules"]
+    ComputerNode["<b>computer_node</b><br/>Executes Playwright, Desktop, or APIs"]
+    RememberNode["<b>remember_node</b><br/>Spawns background memory save"]
     EndNode([Parker Output])
 
     %% State flow
@@ -68,27 +68,27 @@ graph TD
     RouteCheck -- "No" --> RememberNode
     RememberNode --> EndNode
 
-    %% Subgraph showing concurrent async tasks spawned in remember_node
-    subgraph Async Background Pipeline [Triggered in remember_node]
+    %% Subgraph showing the consolidated Unified memory writer
+    subgraph Unified Background Pipeline [Triggered in remember_node]
         direction LR
-        EP[Profile Writer]
-        EF[Facts Extractor]
-        EPJ[Project Ledger]
-        ET[Task Tracker]
-        EE[Episodic Turn Summarizer]
+        UM["Unified Memory Thread<br/>(unified-memory-save)"]
+        UM -.-> P[Profile Ledger]
+        UM -.-> F[Facts Database]
+        UM -.-> PR[Projects Ledger]
+        UM -.-> T[Task Tracker]
     end
-    RememberNode -.-> EP & EF & EPJ & ET & EE
+    RememberNode -.-> UM
 ```
 
-### Node Mechanics & execution Lifecycles
+### Node Mechanics & Execution Lifecycles
 
 | Node | Primary Model | Blocking? | Role & Mechanics |
 | :--- | :--- | :---: | :--- |
-| **`trigger`** | `trigger_llm` *(Llama-3.3-70B)* | **Yes** | Evaluates input using a structured `MemoryTrigger` output to classify if the prompt needs memory retrieval (`needs_retrieval`) or contains recordable context (`needs_storage`). |
-| **`retrieve`** | *Database & Cache* | **Yes** | Queries the database and local embedding cache. It bypasses retrieval entirely for greetings, math, or casual small talk to optimize performance and prevent prompt clutter. |
-| **`chat`** | `chat_llm` *(Llama-3.3-70B)* | **Yes** | Formulates the response under strict British butler tone rules. If the model hallucinates or leaks a database/AI disclaimer, an automated **Memory Repair** check intervenes. |
+| **`trigger`** | `trigger_llm` *(Qwen-32B / LLaMA-70B)* | **Yes** | Evaluates input using a structured `MemoryTrigger` output to classify if the prompt needs memory retrieval (`needs_retrieval`) or contains recordable context (`needs_storage`). |
+| **`retrieve`** | *Database, Cache & Skills* | **Yes** | Queries the database, local embedding cache, and dynamic skills registry. Bypasses deep semantic search for casual talk or greetings, substituting a lightweight context compiler to maintain low latency. |
+| **`chat`** | `chat_llm` *(Ollama Qwen-7B / LLaMA-70B)* | **Yes** | Formulates the response under strict British butler tone rules. If the model hallucinates or leaks a database/AI disclaimer, an automated **Memory Repair** check intervenes. |
 | **`computer`**| *Native Engines* | **Yes** | Executes when `<computer_action>` tags are detected in the chat node output. Once executed, it feeds the results back to the `chat` node as fresh system context. |
-| **`remember`**| *Thread Pool* | **No** | Spawns parallel thread-pool jobs to update the profile, facts, tasks, projects ledger, and write turn-level summaries, instantly returning control to the user. |
+| **`remember`**| *Thread Pool* | **No** | Spawns a single, atomic background thread (`unified-memory-save`) to extract and commit memory modifications concurrently without blocking the chat loop. |
 
 ---
 
@@ -132,41 +132,33 @@ Keeps an active index of development projects containing:
 *   Running decision ledger mapping timestamped updates (e.g., `2026-05-22T00:20:00: Migrated TTS to Kokoro`).
 *   `open_threads`: A list of unresolved bugs, blockers, and next steps.
 
-### 4. Episodic Summary Tree
-Raw transcripts are never retained. Instead, a background summarizer distills each conversation turn into a structured JSON payload:
-```json
-{
-  "summary": "Migrated the local text-to-speech engine to Kokoro, resolving Windows espeak-ng integration.",
-  "key_topics": ["speech synthesis", "kokoro", "espeak-ng"],
-  "projects_mentioned": ["Parker AI"],
-  "decisions": ["Replace external Chatterbox server with direct local python library"],
-  "left_unfinished": ["Fixing the sounddevice channel buffer warning"]
-}
-```
-*   **Rollup Engine**: Upon boundary crossings (startup/shutdown checks), calendar boundaries roll turns into **Day**, **Week**, **Month**, and **Year** summaries.
-*   **Semantic Traversal**: To minimize context length and database calls, a top-down tree search crawls the tree starting at Years and branches down only to relevant Months, Weeks, Days, and Turns.
-*   **Temporal Short-Circuit**: Common queries referencing specific relative timeframes (e.g., "what did we fix yesterday?") bypass embedding-based semantic retrieval entirely, querying the database directly using target ISO date bounds.
+### 4. Consolidated Unified Memory Loop
+Instead of spawning five separate asynchronous background LLM calls (which is slow, expensive, and risks database transaction collisions), Parker utilizes a **Consolidated Memory Extraction Pipeline** (`memory/unified.py`).
+*   **Single-Pass Extraction**: Post-conversation, a single background task triggers the `UNIFIED_MEMORY_PROMPT` containing the existing profile, facts, tasks, and project states alongside the current turn dialogue.
+*   **Atomic Database Operations**: The memory worker extracts all profile modifications, discrete facts, project changes, and new/completed tasks in a single JSON payload.
+*   **Namespace Thread Locks**: Database updates are executed under strict namespace-level thread locks (`threading.Lock` on `facts`, `profile`, `projects`, and `tasks`), preventing write collisions during parallel query processing.
+*   **Rollup Engine**: Calendar rollups still run as scheduled background triggers, condensing turns into Day, Week, Month, and Year summaries.
+*   **Semantic Traversal**: To minimize context length, a top-down tree search crawls the rollup tree starting at Years and branches down only to relevant Months, Weeks, Days, and Turns.
 
 ---
 
-## 🎛️ Execution Senses: "The Hands & Mouth"
+## 🎛️ Execution Senses: "The Hands, Ears, & Mouth"
 
 Parker executes complex desktop, browser, and voice pipelines asynchronously through a suite of integrated orchestration systems:
 
 ```
-                  ┌────────────── [Parker Senses] ──────────────┐
-                  │                                             │
-         [Voice Input (STT)]                           [Voice Output (TTS)]
-         ├── Sounddevice recording                     ├── Kokoro TTS Model
-         ├── Silero VAD (Silence auto-stop)            ├── British Male Voice (bm_george)
-         └── Faster-Whisper transcription              └── Threaded audio streaming (mpv)
-                  │                                             │
-                  └───────────── [Parker Actions] ──────────────┘
-                  │                                             │
-         [Browser Engine]                              [Desktop Automator]
-         ├── Playwright Chromium                       ├── Window Focus Routing
-         ├── Interactive elements mapping              ├── Keypress/Click emulation
-         └── Search, Click, Type, Page-Read            └── Native app launching
+                   ┌────────────── [Parker Senses] ──────────────┐
+                   │                                             │
+          [Voice Input (STT)]                           [Voice Output (TTS)]
+          ├── WebSocket Audio Stream                    ├── WebSocket Audio Stream
+          └── Real-time local transcript                └── Real-time local transcript
+                   │                                             │
+                   └───────────── [Parker Actions] ──────────────┘
+                   │                                             │
+          [Browser Engine]                              [Desktop Automator]
+          ├── Playwright Chromium                       ├── Window Focus Routing
+          ├── Interactive elements mapping              ├── Keypress/Click emulation
+          └── Search, Click, Type, Page-Read            └── Native app launching
 ```
 
 ### 💻 Computer Use Engine
@@ -176,29 +168,45 @@ When the chat node outputs action tags, the execution loop parses them. Parker c
 *   **SearXNG Layer**: A local, federated search instance (`searxng/settings.yml`) running in Docker, falling back to DuckDuckGo search if offline.
 *   **Structured APIs**: Routes structured API parameters for `weather`, `forecast`, `stock`, `crypto`, `wiki`, and `news` queries directly through optimized endpoints.
 
-### 🎙️ Speech Synthesis & Voice Loops
-*   **Ears (STT)**: Uses `sounddevice` to capture microphone inputs. It runs a `Silero VAD` (Voice Activity Detection) filter in a loop, automatically halting recording when silence is detected for 1.0s. It then transcribes the raw audio locally using `faster-whisper` (Small model quantized in `int8` for fast CPU execution).
-*   **Mouth (TTS)**: Replaces remote servers with an offline `Kokoro` pipeline. It runs the British male voice (`bm_george`) matching the butler persona, filtering markdown and code tags before streaming the float32 audio arrays through `sounddevice` with zero gaps.
+### 🎙️ Gemini Live Multimodal Voice Loop
+In Voice Mode, Parker bypasses the separate Whisper STT / Kokoro TTS loop for an immersive, low-latency conversation using the **Gemini Multimodal Live API** (`live_voice.py`).
+*   **Real-time WebSocket Pipeline**: Streams 16kHz mono audio input from the user's microphone directly to `gemini-2.0-flash-live-preview` over WebSockets, receiving a 24kHz raw PCM output stream.
+*   **Server-side VAD**: Relies on Gemini's native activity detection to automatically detect user voice segments and trigger responses.
+*   **Barge-in Support**: If the user interrupts and starts speaking while Parker is talk-streaming, the local speaker queue and sounddevice output stream are instantly cleared and reset, allowing natural conversation.
+*   **Memory Injection**: Parker's system instructions and full vector-retrieved memory context (profile, constraints, relevant facts, project ledgers, tasks, and history) are compiled and injected directly as the initial system instruction of the WebSocket session.
+*   **Console Echoing**: Spoken input and synthesized replies are mirrored as text transcripts in real-time in the terminal.
+*   *Offline fallback*: Parker retains the local Whisper (STT) + Kokoro (TTS) loop as a robust offline/local-only voice synthesis alternative.
+
+---
+
+## 🔌 OpenClaw Dynamic Skills Loader
+
+Parker features an automated, dynamic **Skills Registry** (`memory/skills.py`) aligned with OpenClaw standards. This lets the assistant discover and load specialized execution guides on demand.
+
+*   **Registry Scanner**: Automatically scans `skills/`, `gateway/skills/`, and `gateway/.agents/skills/` for subdirectories containing frontmatter-bounded `SKILL.md` files.
+*   **Semantic Relevance Matcher**: Computes keyword-based overlap scores (ignoring common stop words) comparing the user's input query with the names and descriptions of registered skills.
+*   **Token Budget Controller**:
+    *   Injects only highly relevant skills (ranked with description details) into the prompt context to keep context lengths small and reduce latency.
+    *   Falls back to a compact XML layout (omitting descriptions) or omits irrelevant skills entirely if the prompt size exceeds budget limits (default 8,000 characters).
+*   **Console Inspection**: Users can inspect all detected skills inside a custom console panel using the `/skills` command.
 
 ---
 
 ## 🛡️ System Resilience
 
-### 🔄 Resilient Chat Model & Fallback
-All LLM prompts are wrapped in a thread-safe `ResilientChatModel`. If the primary provider (Groq LLaMA) encounters network failures, outages, or HTTP 429 Rate Limits, the pipeline transparently fails over to Google Gemini (`gemini-2.5-flash`) via the Google AI SDK to ensure uninterrupted availability.
+### 🔄 Groq API Key Rotation Pool
+To prevent background workers (Unified Memory save, episodic rollups, and graph triggers) from crashing due to Groq rate limits, Parker runs an automated API rotation system (`models.py`):
+*   **Rotated Chat Model**: Implements `RotatedChatModel` and `RotatedStructuredModel` wrappers that maintain a pool of available keys (`GROQ_API_KEY_1` to `GROQ_API_KEY_4`).
+*   **API Load Balancing**: When a 429 Rate Limit or Quota Exceeded error is intercepted, the wrapper automatically rotates to the next key and retries the execution.
+*   **Ollama Fallback**: If all keys in the rotation pool fail, it falls back to a local Ollama model to ensure continuous operability.
 
-### 🔑 Multi-Key API Key Rotation
-To prevent parallel background rollups, facts extractions, and project updates from triggering rate limits during active conversation, Parker distributes calls across four distinct Groq API key slots:
-*   `GROQ_API_KEY_1`: Handles foreground **Chat Generation**.
-*   `GROQ_API_KEY_2`: Handles **Rollups** and background **Project Ledger Updates**.
-*   `GROQ_API_KEY_3`: Handles background **Facts Extraction** and **Episode Summaries**.
-*   `GROQ_API_KEY_4`: Handles foreground **Trigger Routing** and background **Profile Updates**.
+### ⚡ Task-Specific LLM Allocation
+Parker splits LLM processing to maximize rate limit efficiency:
+*   **Lightweight / Summary Tasks**: Graph triggers, conversational rollups, project ledgers, and episodic turns are offloaded to **Qwen 32B** (`qwen/qwen3-32b`), which features higher rate limit ceilings.
+*   **High-Reasoning Tasks**: Facts extraction and profile updates are handled by **LLaMA 3.3 70B** (`llama-3.3-70b-versatile`).
 
-### 🔒 Namespace Thread Locks
-To safeguard PostgreSQL databases during rapid multi-threaded background writes (e.g. episodic turns, facts, and profile updates saving concurrently), database execution runs under strict namespace-level thread locks (`threading.Lock`), eliminating write collisions and transaction deadlocks.
-
-### 🛠️ JSON Repair Parser
-Because LLMs often emit markdown code blocks, pythonic booleans (`True`/`False`), or trailing commas, the agent uses a recursive JSON parser (`clean_and_repair_json`). If `json.loads` fails, it cleans the string and attempts a safe evaluation via python's `ast.literal_eval`.
+### 🛠️ Robust JSON Repair Parser
+Because models may occasionally output trailing commas, markdown fences, or pythonic booleans (`True`/`False`), the database parser runs a recursive `clean_and_repair_json` parser. If standard `json.loads` fails, it falls back to a secure python `ast.literal_eval` parsing structure.
 
 ---
 
@@ -208,15 +216,16 @@ Because LLMs often emit markdown code blocks, pythonic booleans (`True`/`False`)
 P.A.R.K.E.R/
 ├── main.py                     # CLI Entrypoint - coordinates startup greeting, console loops, and shutdown hooks
 ├── graph.py                    # LangGraph Routing - defines trigger, retrieve, chat, computer, and remember nodes
-├── retrieval.py                # Context Compiler - aggregates facts, profile, projects, and top-down summary tree
+├── retrieval.py                # Context Compiler - compiles facts, profile, projects, skills, and rollups
 │
 ├── config.py                   # Configuration - environment variable loading, API credentials, and validation
 ├── database.py                 # Database Engine - PostgreSQL store initialization and thread-safe namespace locks
 ├── models.py                   # LLM Models wrapper - handles Groq rotation, Gemini fallbacks, and Ollama embeddings
 │
 ├── interface.py                # Console Render - Rich-based UI panel layouts, status bars, and token trackers
-├── ears.py                     # Voice Input (STT) - Silero VAD-based recording and faster-whisper transcribing
-├── mouth.py                    # Voice Output (TTS) - Local Kokoro pipeline synthesis and sounddevice audio streaming
+├── live_voice.py               # Gemini Live voice loop - WebSocket live-streaming and multi-device PCM routing
+├── ears.py                     # Offline STT - Silero VAD-based recording and faster-whisper transcribing
+├── mouth.py                    # Offline TTS - Local Kokoro pipeline synthesis and sounddevice audio streaming
 ├── make_overview.py            # Docx Exporter - Generates comprehensive DOCX files mapping architecture schemas
 │
 ├── computer/                   # 💻 Tool Orchestration Engine ("The Hands")
@@ -227,6 +236,8 @@ P.A.R.K.E.R/
 │   └── desktop.py              # Windows Automation - handles native applications, window focus, and keyboard inputs
 │
 ├── memory/                     # 🧠 Memory Storage & Maintenance Pipelines
+│   ├── unified.py              # Unified Memory - atomic post-turn extraction of profile, facts, tasks, and projects
+│   ├── skills.py               # Skills loader - dynamic scanning, keyword ranking, and budget filtering
 │   ├── profile.py              # Profile writer - tracks user traits and updates the JSON profile configuration
 │   ├── facts.py                # Facts manager - extracts facts, rates importance, and handles stale archives
 │   ├── projects.py             # Projects tracker - manages technology stacks, decisions, and open threads
@@ -240,7 +251,7 @@ P.A.R.K.E.R/
 │
 ├── prompts/                    # 📝 Core LLM Prompts
 │   ├── chat.py                 # Main Chat Prompt - guides JARVIS voice limits, options, and live-data guards
-│   ├── memory.py               # Memory Prompts - parameters for profile, facts, and task extractions
+│   ├── memory.py               # Memory Prompts - parameters for unified extraction, profiles, and facts
 │   └── rollup.py               # Rollup Prompts - structures for day, week, month, and year rollups
 │
 └── searxng/
@@ -261,11 +272,12 @@ Ensure your local host machine has the following tools installed:
 ---
 
 ### 1. Installation
-Clone the repository and install the dependencies:
+Clone the repository and install dependencies (including the Google GenAI SDK for the live voice mode):
 ```bash
 git clone https://github.com/your-username/parker.git
 cd parker
 pip install -r requirements.txt
+pip install google-genai
 playwright install chromium
 ```
 
@@ -273,6 +285,10 @@ playwright install chromium
 Start the Ollama server locally and pull the embedding model:
 ```bash
 ollama pull mxbai-embed-large
+```
+Make sure you also pull your default local model if utilizing Ollama for chat:
+```bash
+ollama pull qwen2.5:7b
 ```
 
 ### 3. Spin Up Docker Stack
@@ -296,19 +312,22 @@ GROQ_API_KEY_2=gsk_...
 GROQ_API_KEY_3=gsk_...
 GROQ_API_KEY_4=gsk_...
 
-# Google AI Studio key for resilient Gemini fallback
+# Google AI Studio key for resilient Gemini fallback and Live WebSocket Voice loop
 GEMINI_API_KEY=AIzaSy...
 
 # ── Database URI ──────────────────────────────────────────────────────────────
 DB_URI=postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable
 
 # ── LLM Settings ──────────────────────────────────────────────────────────────
-CHAT_LLM_PROVIDER=groq
-CHAT_LLM_MODEL=llama-3.3-70b-versatile
+CHAT_LLM_PROVIDER=ollama
+CHAT_LLM_MODEL=qwen2.5:7b
 CHAT_LLM_TEMPERATURE=0.7
+CHAT_LLM_MAX_TOKENS=1024
+CHAT_LLM_CTX=32768
+OLLAMA_BASE_URL=http://localhost:11434
 
-MEMORY_LLM_PROVIDER=groq
-MEMORY_LLM_MODEL=llama-3.3-70b-versatile
+MEMORY_LLM_PROVIDER=gemini
+MEMORY_LLM_MODEL=gemini-2.5-flash
 ```
 
 ### 5. Launch Parker
@@ -328,7 +347,7 @@ python main.py
 Once the console banner boots up and the status bar is active, you can interact with Parker using both keystrokes and slash commands:
 
 ### Keyboard Mode Toggles
-*   `v` + `Enter`: Switches input type to **Voice Mode** (activates Whisper transcribing and Silero auto-silence recording).
+*   `v` + `Enter`: Switches input type to **Voice Mode** (starts the live Gemini WebSocket session).
 *   `t` + `Enter`: Switches input type back to **Text Mode**.
 
 ### Slash Commands
@@ -336,6 +355,7 @@ Once the console banner boots up and the status bar is active, you can interact 
 *   `/facts`: Renders your personal facts list, sorted by importance level.
 *   `/projects`: Displays a layout containing active development projects, their stacks, and decision log updates.
 *   `/tasks`: Renders a prioritized board showing your active reminders (🔴 High, 🔸 Normal, 🔹 Low).
+*   `/skills`: Lists all detected OpenClaw skills, their description summaries, and relative file paths.
 *   `/patterns`: Lists behavioral habits and patterns detected across your chat history.
 *   `/clear`: Clears the console interface.
 *   `exit` / `quit` / `bye`: Initiates a graceful shutdown (resolves background queues, runs rollups, and closes PostgreSQL connections).

@@ -2,7 +2,7 @@ import re
 import time
 from datetime import datetime, timedelta
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from memory.utils import format_messages, full_scan, parse_json_object, semantic_search, start_background_job
 from models import episodes_llm
@@ -50,11 +50,12 @@ def write_chat_entry(store, user_id: str, messages: list):
     if not messages:
         return
 
+    from memory.utils import get_message_content
     pending_user = None
     for message in messages:
         if hasattr(message, "type"):
             role = "user" if message.type == "human" else "assistant"
-            content = message.content
+            content = get_message_content(message)
         elif isinstance(message, dict):
             role = message.get("role")
             content = message.get("content", "")
@@ -282,7 +283,8 @@ def _build_chat_summary_entry(key: str, date_label: str, *, user_message: str, a
             {"role": "assistant", "content": assistant_message},
         ])
         response = episodes_llm.invoke([
-            SystemMessage(content=CHAT_SUMMARY_PROMPT.format(conversation=conversation))
+            SystemMessage(content=CHAT_SUMMARY_PROMPT.format(conversation=conversation)),
+            HumanMessage(content="Generate conversation summary now.")
         ])
         parsed = parse_json_object(response.content)
         if parsed:

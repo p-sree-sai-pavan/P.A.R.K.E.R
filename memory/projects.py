@@ -1,7 +1,7 @@
 import re
 import time
 from datetime import datetime
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from models import projects_llm
 from prompts.memory import PROJECT_EXTRACTION_PROMPT
@@ -148,7 +148,8 @@ def _extract_and_save(store, user_id: str, messages: list):
                 SystemMessage(content=PROJECT_EXTRACTION_PROMPT.format(
                     existing_projects=existing_text or "(empty)",
                     conversation=conversation,
-                ))
+                )),
+                HumanMessage(content="Extract project changes now.")
             ])
 
             extracted = parse_json_array(response.content)
@@ -247,9 +248,10 @@ def _today_label() -> str:
 
 
 def _get_last_user_message(messages: list) -> str:
+    from memory.utils import get_message_content
     for m in reversed(messages):
         if hasattr(m, "type") and m.type == "human":
-            return m.content
+            return get_message_content(m)
         elif isinstance(m, dict) and m.get("role") == "user":
             return m.get("content", "")
     return ""

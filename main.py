@@ -32,7 +32,6 @@ load_dotenv()
 from langchain_core.messages import HumanMessage
 
 from graph import build_graph
-from ears import listen
 from mouth import speak
 from config import DEFAULT_USER_ID, DEFAULT_THREAD_ID, get_config, CHAT_LLM_MODEL
 from database import create_store, create_checkpointer, setup_database, close_connections
@@ -125,9 +124,13 @@ Greeting:"""
 
     try:
         from models import chat_llm
-        from langchain_core.messages import SystemMessage
-        response = chat_llm.invoke([SystemMessage(content=greeting_prompt)])
-        greeting = response.content.strip()
+        from langchain_core.messages import SystemMessage, HumanMessage
+        from memory.utils import get_message_content
+        response = chat_llm.invoke([
+            SystemMessage(content=greeting_prompt),
+            HumanMessage(content="Generate greeting.")
+        ])
+        greeting = get_message_content(response).strip()
         # Clean any quotes or formatting
         greeting = greeting.replace('"', '').replace("'", "")
         if greeting:
@@ -156,11 +159,8 @@ def ask(graph, prompt: str, custom_config=None, show_spinner=True) -> str:
             )
 
         last_msg = result["messages"][-1]
-        if hasattr(last_msg, "content"):
-            return last_msg.content
-        if isinstance(last_msg, dict):
-            return last_msg.get("content", "")
-        return ""
+        from memory.utils import get_message_content
+        return get_message_content(last_msg)
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "rate limit" in err_str.lower() or "rate_limit_exceeded" in err_str:
@@ -197,22 +197,57 @@ def session_end(store):
 import queue
 import time
 import re
-from ears import ContinuousVoiceListener
-from mouth import stop_speaking
+from live_voice import (
+    start_live_voice_session,
+    stop_live_voice_session,
+    is_live_session_active,
+)
 
-voice_listener = None
 
-def update_listener_mode(current_mode, input_queue):
-    global voice_listener
+def _build_live_system_prompt(store) -> str:
+    """Build the full Parker system prompt with memory context for the Live session."""
+    from prompts.chat import BASE_INSTRUCTIONS, SYSTEM_PROMPT_TEMPLATE
+    from retrieval import build_context
+    from config import USER_ID
+    from datetime import datetime
+
+    context = build_context(store, USER_ID, message="[voice session start]", recent_history=[])
+
+    def _section(title, content):
+        if not content or content in ("(none)", "(no profile yet)", ""):
+            return ""
+        return f"## {title}\n{content}\n\n"
+
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        base_instructions=BASE_INSTRUCTIONS,
+        current_time=datetime.now().strftime("%A, %B %d, %Y — %I:%M %p"),
+        profile=_section("YOUR PROFILE OF PAVAN", context.get("profile", "")),
+        critical_facts=_section("HARD CONSTRAINTS", context.get("critical_facts", "")),
+        relevant_facts=_section("THINGS YOU REMEMBER ABOUT PAVAN", context.get("relevant_facts", "")),
+        active_projects=_section("PROJECTS YOU ARE CURRENTLY TRACKING", context.get("active_projects", "")),
+        pending_tasks=_section("YOUR ACTIVE TASK LIST", context.get("pending_tasks", "")),
+        observed_patterns=_section("OBSERVED BEHAVIOR PATTERNS & HABITS", context.get("observed_patterns", "")),
+        relevant_episodes=_section(
+            "YOUR RECENT RECOLLECTIONS (CHRONOLOGICAL)\nEach entry below has an exact key (ISO timestamp or date). Use these for any date reference — never guess.",
+            context.get("relevant_episodes", ""),
+        ),
+        telemetry=_section("LIVE ENVIRONMENT TELEMETRY", context.get("telemetry", "")),
+    )
+
+
+def update_listener_mode(current_mode, input_queue, store=None):
     if current_mode == "voice":
-        if not voice_listener:
-            # speech_detected_callback halts mouth playback (barge-in)
-            voice_listener = ContinuousVoiceListener(input_queue, stop_speaking)
-            voice_listener.start()
+        if not is_live_session_active():
+            system_prompt = _build_live_system_prompt(store) if store else ""
+            start_live_voice_session(
+                system_prompt=system_prompt,
+                on_user_transcript=lambda t: interface.print_user(f"[You] {t}"),
+                on_parker_transcript=lambda t: interface.print_parker(f"{t}"),
+                on_session_end=lambda: interface.print_system("[Live Voice] Session ended."),
+            )
     else:
-        if voice_listener:
-            voice_listener.stop()
-            voice_listener = None
+        if is_live_session_active():
+            stop_live_voice_session()
 
 
 def apply_persona_filters(text: str) -> str:
@@ -429,14 +464,14 @@ if __name__ == "__main__":
 
             if lower == "v":
                 mode_holder["mode"] = "voice"
-                update_listener_mode("voice", input_queue)
+                update_listener_mode("voice", input_queue, store)
                 interface.print_mode_switch("voice")
                 interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode="voice")
                 continue
 
             if lower == "t":
                 mode_holder["mode"] = "text"
-                update_listener_mode("text", input_queue)
+                update_listener_mode("text", input_queue, store)
                 interface.print_mode_switch("text")
                 interface.print_status_bar(model=CHAT_LLM_MODEL, memory="Active", mode="text")
                 continue
@@ -471,6 +506,12 @@ if __name__ == "__main__":
             if lower == "/tasks":
                 raw = load_active_tasks(store, USER_ID)
                 interface.print_tasks_panel(raw)
+                continue
+
+            if lower in ("/skills", "/skill"):
+                from memory.skills import get_all_skills
+                skills_list = get_all_skills()
+                interface.print_skills_panel(skills_list)
                 continue
 
             if lower == "/patterns":
@@ -528,8 +569,8 @@ if __name__ == "__main__":
         interface.print_system("Parker shutting down…")
 
     finally:
-        # Stop background voice listener if active
-        update_listener_mode("text", input_queue)
+        # Stop Gemini Live voice session if active
+        update_listener_mode("text", input_queue, store)
         interface.print_system("Waiting for background memory writes…")
         wait_for_background_jobs()
         session_end(store)

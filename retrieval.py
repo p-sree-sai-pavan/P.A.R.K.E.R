@@ -94,6 +94,9 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
     telemetry_data = get_system_telemetry()
     telemetry_text = format_telemetry_for_prompt(telemetry_data)
 
+    from memory.skills import get_available_skills_prompt
+    skills_text = get_available_skills_prompt(query=message)
+
     return {
         "profile": profile_text,
         "active_projects": projects_text,
@@ -102,12 +105,13 @@ def build_context(store, user_id: str, message: str, recent_history: list = None
         "relevant_episodes": episodes_text,
         "pending_tasks": tasks_text,
         "observed_patterns": patterns_text,
+        "skills": skills_text,
         "current_time": current_time,
         "telemetry": telemetry_text,
     }
 
 
-def build_lightweight_context(store, user_id: str) -> dict:
+def build_lightweight_context(store, user_id: str, query: str = None) -> dict:
     """
     Loads profile, critical facts, active projects, active tasks, and patterns 
     without doing any semantic vector search (avoiding Ollama embedding latency).
@@ -135,6 +139,9 @@ def build_lightweight_context(store, user_id: str) -> dict:
     now = datetime.now()
     current_time = now.strftime("%A, %B %d %Y, %I:%M %p")
 
+    from memory.skills import get_available_skills_prompt
+    skills_text = get_available_skills_prompt(query=query)
+
     return {
         "profile": profile_text,
         "active_projects": projects_text,
@@ -143,6 +150,7 @@ def build_lightweight_context(store, user_id: str) -> dict:
         "relevant_episodes": "",
         "pending_tasks": tasks_text,
         "observed_patterns": patterns_text,
+        "skills": skills_text,
         "current_time": current_time,
         "telemetry": telemetry_text,
     }
@@ -184,7 +192,19 @@ def _should_expand_episode_query(message: str) -> bool:
 
 def _message_content(msg) -> str:
     if hasattr(msg, "content"):
-        return msg.content or ""
+        c = msg.content
+        if isinstance(c, list):
+            parts = []
+            for item in c:
+                if isinstance(item, dict):
+                    if "text" in item:
+                        parts.append(item["text"])
+                    elif item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts)
+        return c or ""
     if isinstance(msg, dict):
         return msg.get("content", "") or ""
     return str(msg)

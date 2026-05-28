@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from models import profile_llm as patterns_llm  # Use key 4 (profile/trigger key)
 from memory.utils import (
@@ -83,7 +83,8 @@ def _detect_patterns_sync(store, user_id: str):
 
             # 3. Call LLM to extract patterns
             response = patterns_llm.invoke([
-                SystemMessage(content=PATTERN_ANALYSIS_PROMPT.format(history=history_text))
+                SystemMessage(content=PATTERN_ANALYSIS_PROMPT.format(history=history_text)),
+                HumanMessage(content="Extract patterns now.")
             ])
 
             patterns = parse_json_array(response.content)

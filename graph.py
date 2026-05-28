@@ -17,10 +17,7 @@ from langgraph.store.base import BaseStore
 from models import chat_llm, trigger_llm
 from prompts.chat import BASE_INSTRUCTIONS, SYSTEM_PROMPT_TEMPLATE
 from retrieval import build_context, build_lightweight_context
-from memory.facts import save_facts
-from memory.profile import save_profile
-from memory.projects import save_projects
-from memory.tasks import save_tasks
+from memory.unified import save_memory_updates
 
 
 # ── Computer use (lazy import — won't crash if libs missing) ──────────────────
@@ -80,7 +77,19 @@ class AppState(TypedDict):
 
 def _get_content(msg) -> str:
     if hasattr(msg, "content"):
-        return msg.content
+        c = msg.content
+        if isinstance(c, list):
+            parts = []
+            for item in c:
+                if isinstance(item, dict):
+                    if "text" in item:
+                        parts.append(item["text"])
+                    elif item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts)
+        return c
     if isinstance(msg, dict):
         return msg.get("content", "")
     return str(msg)
@@ -242,7 +251,7 @@ def retrieve_node(state: AppState, config: RunnableConfig, store: BaseStore):
 
     if skip:
         print("[Memory] Retrieval skipped (casual chat) - running lightweight retrieval.")
-        context = build_lightweight_context(store, user_id)
+        context = build_lightweight_context(store, user_id, query=message)
     else:
         print("[Memory] Full retrieval running.")
         recent_history = state["messages"][-12:]
@@ -278,6 +287,7 @@ def chat_node(state: AppState, config: RunnableConfig, store: BaseStore):
         pending_tasks=_section("YOUR ACTIVE TASK LIST", context.get("pending_tasks", "")),
         observed_patterns=_section("OBSERVED BEHAVIOR PATTERNS & HABITS", context.get("observed_patterns", "")),
         relevant_episodes=_section("YOUR RECENT RECOLLECTIONS (CHRONOLOGICAL)\nEach entry below has an exact key (ISO timestamp or date). Use these for any date reference — never guess.", context.get("relevant_episodes", "")),
+        skills=_section("AVAILABLE OPENCLAW SKILLS", context.get("skills", "")),
         telemetry=_section("LIVE ENVIRONMENT TELEMETRY", context.get("telemetry", "")),
     )
 
@@ -344,14 +354,11 @@ def remember_node(state, config, store):
         if hasattr(msg, "type") and msg.type == "human":
             break
 
-    save_profile(store, user_id, current_turn)
-    save_facts(store, user_id, current_turn)
-    save_projects(store, user_id, current_turn)
-    save_tasks(store, user_id, current_turn)
+    save_memory_updates(store, user_id, current_turn)
 
     if len(current_turn) >= 2:
-        user_msg = current_turn[0].content if hasattr(current_turn[0], 'content') else ""
-        assistant_msg = current_turn[-1].content if hasattr(current_turn[-1], 'content') else ""
+        user_msg = _get_content(current_turn[0])
+        assistant_msg = _get_content(current_turn[-1])
         write_chat_turn_async(store, user_id, user_msg, assistant_msg)
 
     return {}
